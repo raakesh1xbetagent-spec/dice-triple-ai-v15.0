@@ -1,23 +1,15 @@
 // ============================================================
-// new-ai-logic.js (v15.0 - TRIPLE PREDICTOR AI with PRIMARY)
+// new-ai-logic.js (v15.1 - TRIPLE PREDICTOR AI with PRIMARY)
 // 
-// Core Logic:
-// - Takes last 10 results
-// - Counts frequency of LOW, MEDIUM, HIGH
-// - THREE PREDICTORS:
-//   1. MEDIAN: Finds median of [LOW_count, MEDIUM_count, HIGH_count]
-//   2. HIGH-VOLUME: Predicts group with HIGHEST frequency
-//   3. LOW-VOLUME: Predicts group with LOWEST frequency
-// - PRIMARY PREDICTION (NEW): 
-//   * If 3 groups equal → WAITING
-//   * If 2 groups equal → predict the UNIQUE group
-//   * If all 3 different → predict HIGH-VOLUME (most frequent)
-// - Retry: Shared retry count for all predictors
+// FIXED: PRIMARY prediction now works independently of MEDIAN waiting
+// - PRIMARY always calculates based on its own rules
+// - Even when MEDIAN is waiting, PRIMARY can be ACTIVE
+// - Status shows "PRIMARY_ACTIVE" when PRIMARY has prediction but others waiting
 // ============================================================
 
 class MedianBasedAI {
     constructor() {
-        this.version = "15.0";
+        this.version = "15.1";
         this.name = "Triple Predictor Statistical AI";
         
         // AI State (shared for all predictors)
@@ -52,8 +44,8 @@ class MedianBasedAI {
         console.log(`   1. MEDIAN (unique median prediction)`);
         console.log(`   2. HIGH-VOLUME (most frequent group)`);
         console.log(`   3. LOW-VOLUME (least frequent group)`);
-        console.log(`   🏆 PRIMARY: Smart selection based on frequency patterns`);
-        console.log(`⏳ WAITING condition affects ALL THREE predictors`);
+        console.log(`   🏆 PRIMARY: Smart selection based on frequency patterns (INDEPENDENT)`);
+        console.log(`⏳ WAITING condition affects only MEDIAN, HIGH-VOL, LOW-VOL`);
     }
     
     /**
@@ -183,6 +175,8 @@ class MedianBasedAI {
      * 1. If all 3 groups equal → WAITING
      * 2. If 2 groups equal → predict the UNIQUE group (the one that's different)
      * 3. If all 3 different → predict HIGH-VOLUME (most frequent group)
+     * 
+     * IMPORTANT: PRIMARY works INDEPENDENTLY of MEDIAN waiting
      */
     getPrimaryPrediction(frequencies) {
         const low = frequencies.LOW;
@@ -207,7 +201,8 @@ class MedianBasedAI {
                 predictedGroup: null,
                 status: "WAITING",
                 reason: "ALL_GROUPS_EQUAL",
-                message: "All three groups have equal frequency. Waiting for next result."
+                message: "All three groups have equal frequency. Waiting for next result.",
+                confidence: 0
             };
         }
         
@@ -266,7 +261,8 @@ class MedianBasedAI {
             predictedGroup: null,
             status: "WAITING",
             reason: "UNKNOWN",
-            message: "Unable to determine primary prediction."
+            message: "Unable to determine primary prediction.",
+            confidence: 0
         };
     }
     
@@ -302,17 +298,18 @@ class MedianBasedAI {
     }
     
     /**
-     * Determine if we should wait or predict (SHARED for ALL predictors)
-     * Based on MEDIAN uniqueness (as per original logic)
+     * Determine if we should wait or predict (SHARED for MEDIAN, HIGH-VOL, LOW-VOL)
+     * Based on MEDIAN uniqueness
+     * PRIMARY is NOT affected by this!
      */
     shouldWait(medianResult) {
         if (!medianResult.isUnique) {
             if (medianResult.duplicateGroups.length === 3) {
                 this.waitingReason = "ALL_GROUPS_EQUAL";
-                console.log(`⏳ WAITING: All three groups have equal frequency (${medianResult.medianValue} each)`);
+                console.log(`⏳ WAITING (MEDIAN/HIGH-VOL/LOW-VOL): All three groups have equal frequency (${medianResult.medianValue} each)`);
             } else {
                 this.waitingReason = "DUPLICATE_MEDIAN";
-                console.log(`⏳ WAITING: Median value ${medianResult.medianValue} appears in multiple groups: ${medianResult.duplicateGroups.join(', ')}`);
+                console.log(`⏳ WAITING (MEDIAN/HIGH-VOL/LOW-VOL): Median value ${medianResult.medianValue} appears in multiple groups: ${medianResult.duplicateGroups.join(', ')}`);
             }
             return true;
         }
@@ -421,6 +418,7 @@ class MedianBasedAI {
     
     /**
      * MAIN PREDICTION FUNCTION - Returns ALL THREE predictions + PRIMARY
+     * FIXED: PRIMARY always calculated, even when MEDIAN is waiting
      * @param {Array} last10Results - Array of last 10 results (each with .group or .total)
      * @returns {Object} Prediction result with all three predictors and primary
      */
@@ -440,31 +438,36 @@ class MedianBasedAI {
         const highVolResult = this.getHighVolumePrediction(frequencies);
         const lowVolResult = this.getLowVolumePrediction(frequencies);
         
-        // NEW: Get PRIMARY prediction
+        // NEW: Get PRIMARY prediction (ALWAYS calculate, independent of waiting)
         const primaryResult = this.getPrimaryPrediction(frequencies);
         
         // Get formatted stats for UI
         const formattedStats = this.getFormattedStats(frequencies, last10Results);
         
-        // Check if we should wait (SHARED condition based on MEDIAN)
-        if (this.shouldWait(medianResult)) {
-            // If we were in active prediction mode, deactivate ALL
+        // Check if MEDIAN should wait (affects only MEDIAN, HIGH-VOL, LOW-VOL)
+        const isMedianWaiting = this.shouldWait(medianResult);
+        
+        if (isMedianWaiting) {
+            // If we were in active prediction mode, deactivate MEDIAN/HIGH-VOL/LOW-VOL
             if (this.isActive) {
-                console.log(`⚠️ WAITING condition met, deactivating ALL prediction modes`);
+                console.log(`⚠️ WAITING condition met, deactivating MEDIAN/HIGH-VOL/LOW-VOL modes`);
                 this.isActive = false;
                 this.currentMedianPrediction = null;
                 this.currentHighVolPrediction = null;
                 this.currentLowVolPrediction = null;
-                this.currentPrimaryPrediction = null;
+                // PRIMARY state is NOT reset here
             }
             
+            // PRIMARY may still be ACTIVE even when others are waiting
+            const isPrimaryActive = primaryResult.status === "ACTIVE";
+            
             return {
-                status: "WAITING",
+                status: isPrimaryActive ? "PRIMARY_ACTIVE" : "WAITING",
                 waitingReason: this.waitingReason,
                 frequencies: frequencies,
                 stats: formattedStats,
                 medianResult: medianResult,
-                // ALL three predictors are WAITING
+                // MEDIAN, HIGH-VOL, LOW-VOL are WAITING
                 median: {
                     status: "WAITING",
                     predictedGroup: null,
@@ -483,7 +486,7 @@ class MedianBasedAI {
                     confidence: 0,
                     message: `WAITING: Median condition not met`
                 },
-                // NEW: PRIMARY prediction (may still be active even if median waiting)
+                // PRIMARY prediction (independent)
                 primary: {
                     status: primaryResult.status,
                     predictedGroup: primaryResult.predictedGroup,
@@ -491,7 +494,7 @@ class MedianBasedAI {
                     reason: primaryResult.reason,
                     message: primaryResult.message
                 },
-                waitingForData: true,
+                waitingForData: false,  // Not waiting for data, just waiting for unique median
                 last10Count: this.last10Results.length,
                 isRetry: false,
                 retryCount: 0
@@ -570,7 +573,7 @@ class MedianBasedAI {
                 count: lowVolResult.count,
                 message: lowVolResult.message
             },
-            // NEW: PRIMARY prediction
+            // PRIMARY prediction
             primary: {
                 status: primaryResult.status,
                 predictedGroup: primaryResult.predictedGroup,
