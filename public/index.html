@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="description" content="Lightning Dice Predictor - Triple Predictor Statistical AI v14.0">
+    <title>Lightning Dice Predictor - Triple AI v14.0</title>
+    <link rel="stylesheet" href="/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        /* Additional styles for v14.0 Triple Predictor AI */
+        .median-stats-panel {
+            background: rgba(0,0,0,0.3);
+            border-radius: 12px;
+            padding: 12px;
+            margin-top: 10px;
+        }
+        
+        .median-title {
+            font-size: 11px;
+            opacity: 0.7;
+            margin-bottom: 8px;
+            text-align: center;
+        }
+        
+        .median-bars {
+            display: flex;
+            height: 28px;
+            border-radius: 8px;
+            overflow: hidden;
+            margin-bottom: 8px;
+        }
+        
+        .median-bar {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 9px;
+            font-weight: 600;
+            color: #1a1a2e;
+            transition: width 0.3s ease;
+        }
+        
+        .low-bar { background: linear-gradient(135deg, #ef4444, #dc2626); }
+        .medium-bar { background: linear-gradient(135deg, #fbbf24, #f59e0b); }
+        .high-bar { background: linear-gradient(135deg, #4ade80, #22c55e); }
+        
+        .last10-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            align-items: center;
+        }
+        
+        .group-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        
+        .group-chip.low { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+        .group-chip.medium { background: rgba(251, 191, 36, 0.2); color: #fbbf24; }
+        .group-chip.high { background: rgba(74, 222, 128, 0.2); color: #4ade80; }
+        
+        .median-card {
+            background: rgba(0,0,0,0.2);
+            border-radius: 12px;
+            padding: 10px 15px;
+            text-align: center;
+        }
+        
+        .frequency-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 12px;
+        }
+        
+        .frequency-label {
+            font-weight: 600;
+        }
+        
+        .info-badge {
+            display: inline-block;
+            background: rgba(251, 191, 36, 0.15);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 11px;
+            margin-left: 8px;
+        }
+        
+        /* Triple Predictor Table Styles */
+        .triple-predictor-table {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 16px;
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+        
+        .triple-header {
+            display: grid;
+            grid-template-columns: 1fr 100px 100px 100px;
+            background: rgba(139, 92, 246, 0.2);
+            padding: 12px 16px;
+            font-weight: 700;
+            font-size: 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            text-align: center;
+        }
+        
+        .triple-row {
+            display: grid;
+            grid-template-columns: 1fr 100px 100px 100px;
+            padding: 12px 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            text-align: center;
+        }
+        
+        .predictor-median { color: #a78bfa; }
+        .predictor-highvol { color: #4ade80; }
+        .predictor-lowvol { color: #fbbf24; }
+        
+        .prediction-cell {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .prediction-cell.correct {
+            background: rgba(74, 222, 128, 0.25);
+            color: #4ade80;
+            border: 1px solid rgba(74, 222, 128, 0.5);
+        }
+        
+        .prediction-cell.incorrect {
+            background: rgba(239, 68, 68, 0.25);
+            color: #ef4444;
+            border: 1px solid rgba(239, 68, 68, 0.5);
+        }
+        
+        .prediction-cell.pending {
+            background: rgba(251, 191, 36, 0.2);
+            color: #fbbf24;
+        }
+        
+        .retry-badge {
+            font-size: 9px;
+            opacity: 0.7;
+            margin-top: 2px;
+        }
+        
+        .small-info {
+            font-size: 8px;
+            opacity: 0.5;
+            margin-top: 2px;
+        }
+        
+        .triple-predictor-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-top: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .predictor-card {
+            background: rgba(0, 0, 0, 0.25);
+            border-radius: 16px;
+            padding: 15px;
+            text-align: center;
+            transition: transform 0.2s;
+        }
+        
+        .predictor-card:hover {
+            transform: translateY(-3px);
+            background: rgba(0, 0, 0, 0.35);
+        }
+        
+        .predictor-title {
+            font-size: 14px;
+            font-weight: 700;
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid;
+        }
+        
+        .predictor-title.median { border-color: #a78bfa; color: #a78bfa; }
+        .predictor-title.highvol { border-color: #4ade80; color: #4ade80; }
+        .predictor-title.lowvol { border-color: #fbbf24; color: #fbbf24; }
+        
+        .predictor-value {
+            font-size: 32px;
+            font-weight: 800;
+            margin: 10px 0;
+        }
+        
+        .predictor-confidence {
+            font-size: 14px;
+            opacity: 0.8;
+        }
+        
+        .predictor-status {
+            font-size: 11px;
+            margin-top: 8px;
+            padding: 4px 8px;
+            border-radius: 20px;
+            display: inline-block;
+        }
+        
+        .status-active {
+            background: rgba(74, 222, 128, 0.2);
+            color: #4ade80;
+        }
+        
+        .status-wait {
+            background: rgba(251, 191, 36, 0.2);
+            color: #fbbf24;
+        }
+        
+        .status-tie {
+            background: rgba(139, 92, 246, 0.2);
+            color: #a78bfa;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+        
+        .median-info-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .median-info-item {
+            text-align: center;
+            padding: 8px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 10px;
+        }
+        
+        .median-info-label {
+            font-size: 9px;
+            opacity: 0.6;
+        }
+        
+        .median-info-value {
+            font-size: 18px;
+            font-weight: 700;
+        }
+        
+        .waiting-text {
+            color: #fbbf24;
+            opacity: 0.7;
+            font-style: italic;
+        }
+        
+        /* History table column adjustment */
+        .history-table th, .history-table td {
+            padding: 8px 6px;
+            text-align: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            font-size: 11px;
+        }
+        
+        .dice-values {
+            font-family: monospace;
+            font-size: 11px;
+            letter-spacing: 2px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="logo">
+                <span class="lightning-icon">⚡</span>
+                <h1>Lightning Dice Predictor</h1>
+                <span class="version-badge">v14.0 - TRIPLE AI</span>
+            </div>
+            <div class="header-buttons">
+                <div class="status-badge" id="connectionStatus">
+                    <span class="status-dot"></span>
+                    <span id="statusText">Connecting...</span>
+                </div>
+            </div>
+        </header>
+
+        <div id="errorMessage" class="error-message" style="display: none;"></div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">Total Rounds</div>
+                <div class="stat-value" id="totalRounds">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Average Result</div>
+                <div class="stat-value" id="avgResult">0.00</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Most Active Group</div>
+                <div class="stat-value" id="mostActiveGroup">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Lightning Boost</div>
+                <div class="stat-value" id="lightningBoost">0%</div>
+            </div>
+        </div>
+
+        <!-- ============ TRIPLE PREDICTOR AI SECTION ============ -->
+        <div class="prediction-section">
+            <h2>📊 TRIPLE PREDICTOR STATISTICAL AI v14.0</h2>
+            
+            <div class="pattern-info-bar">
+                <div class="info-item">
+                    <span class="info-label">📐 Last 10 Results:</span>
+                    <div class="info-value" id="last10Groups">--</div>
+                    <span class="info-badge" id="last10Count">0/10</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">🔬 AI Status:</span>
+                    <span class="info-value" id="predictionStatus">Checking...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">🎯 Active System:</span>
+                    <span class="info-value" id="activeModelDisplay">--</span>
+                </div>
+            </div>
+
+            <!-- Frequency Analysis Card -->
+            <div class="median-card" style="margin-bottom: 20px;">
+                <div style="font-size: 12px; opacity: 0.7;">📐 10-Result Frequency Analysis</div>
+                <div class="median-info-grid">
+                    <div class="median-info-item">
+                        <div class="median-info-label">🔴 LOW</div>
+                        <div class="median-info-value" id="lowCount">--</div>
+                    </div>
+                    <div class="median-info-item">
+                        <div class="median-info-label">🟡 MEDIUM</div>
+                        <div class="median-info-value" id="mediumCount">--</div>
+                    </div>
+                    <div class="median-info-item">
+                        <div class="median-info-label">🟢 HIGH</div>
+                        <div class="median-info-value" id="highCount">--</div>
+                    </div>
+                </div>
+                <div class="frequency-row">
+                    <span class="frequency-label">📊 Frequencies:</span>
+                    <span id="frequencies">-- → -- → --</span>
+                </div>
+                <div class="frequency-row">
+                    <span class="frequency-label">🎯 Median Value:</span>
+                    <strong id="medianValue">--</strong>
+                </div>
+            </div>
+
+            <!-- Three Predictors Display -->
+            <div class="triple-predictor-grid">
+                <div class="predictor-card">
+                    <div class="predictor-title median">📐 MEDIAN</div>
+                    <div class="predictor-value" id="medianPrediction">--</div>
+                    <div class="predictor-confidence" id="medianConfidence">0%</div>
+                    <div class="predictor-status" id="medianStatus">--</div>
+                </div>
+                <div class="predictor-card">
+                    <div class="predictor-title highvol">📈 HIGH-VOLUME</div>
+                    <div class="predictor-value" id="highVolPrediction">--</div>
+                    <div class="predictor-confidence" id="highVolConfidence">0%</div>
+                    <div class="predictor-status" id="highVolStatus">--</div>
+                </div>
+                <div class="predictor-card">
+                    <div class="predictor-title lowvol">📉 LOW-VOLUME</div>
+                    <div class="predictor-value" id="lowVolPrediction">--</div>
+                    <div class="predictor-confidence" id="lowVolConfidence">0%</div>
+                    <div class="predictor-status" id="lowVolStatus">--</div>
+                </div>
+            </div>
+
+            <!-- Final Prediction Card (shows MEDIAN as primary) -->
+            <div class="final-prediction-card">
+                <div class="final-header">
+                    <span class="final-icon">🏆</span>
+                    <span class="final-title">PRIMARY PREDICTION</span>
+                    <span class="final-vote" id="predictionType">(MEDIAN Predictor)</span>
+                </div>
+                <div class="final-group" id="finalGroup">
+                    <span class="final-group-icon" id="finalIcon">🎯</span>
+                    <span class="final-group-name" id="finalName">--</span>
+                    <span class="final-group-range" id="finalRange">--</span>
+                </div>
+                <div class="final-confidence">
+                    <div class="confidence-meter">
+                        <div class="confidence-fill" id="confidenceFill" style="width: 0%"></div>
+                    </div>
+                    <span class="confidence-text" id="finalConfidence">0%</span>
+                </div>
+                <div class="final-explanation" id="finalExplanation">Waiting for 10 results to analyze frequencies...</div>
+                <div class="final-weights" id="finalWeights"></div>
+            </div>
+        </div>
+
+        <!-- ============ HOW TRIPLE AI WORKS ============ -->
+        <div class="patterns-reference">
+            <div class="section-header">
+                <h2>📚 How Triple Predictor AI Works</h2>
+            </div>
+            <div class="patterns-grid">
+                <div class="pattern-card">
+                    <div class="pattern-3step">📊 Step 1: Collect Data</div>
+                    <div class="pattern-actions">Analyzes last 10 game results</div>
+                </div>
+                <div class="pattern-card">
+                    <div class="pattern-3step">📐 Step 2: Count Frequencies</div>
+                    <div class="pattern-actions">Count LOW, MEDIUM, HIGH occurrences</div>
+                </div>
+                <div class="pattern-card">
+                    <div class="pattern-3step">🎯 Step 3: THREE Predictors</div>
+                    <div class="pattern-actions">
+                        📐 MEDIAN: Middle value group<br>
+                        📈 HIGH-VOL: Most frequent group<br>
+                        📉 LOW-VOL: Least frequent group
+                    </div>
+                </div>
+                <div class="pattern-card">
+                    <div class="pattern-3step">✅ Step 4: Check Uniqueness</div>
+                    <div class="pattern-actions">If median is UNIQUE → ALL THREE predict</div>
+                </div>
+                <div class="pattern-card">
+                    <div class="pattern-3step">⏳ Step 5: Handle Ties</div>
+                    <div class="pattern-actions">If median duplicate → ALL THREE WAIT</div>
+                </div>
+                <div class="pattern-card">
+                    <div class="pattern-3step">🔄 Step 6: Shared Retry</div>
+                    <div class="pattern-actions">Wrong prediction? ALL THREE recalculate with updated data</div>
+                </div>
+            </div>
+            <div class="pattern-note">
+                💡 <strong>Why Triple Predictor?</strong><br>
+                📐 MEDIAN: Resistant to outliers, represents central tendency<br>
+                📈 HIGH-VOLUME: Follows the trend, predicts the most common outcome<br>
+                📉 LOW-VOLUME: Contrarian approach, predicts the least common outcome<br>
+                🔄 Shared WAITING & Retry: All three predictors wait together and retry together
+            </div>
+        </div>
+
+        <!-- Group Statistics -->
+        <div class="group-stats">
+            <div class="group-stat low-group">
+                <div class="group-header">
+                    <span class="group-icon">🔴</span>
+                    <span class="group-title">LOW</span>
+                    <span class="group-range">(3-9)</span>
+                </div>
+                <div class="group-probability" id="lowProb">0%</div>
+                <div class="group-trend" id="lowTrend">-</div>
+            </div>
+            <div class="group-stat medium-group">
+                <div class="group-header">
+                    <span class="group-icon">🟡</span>
+                    <span class="group-title">MEDIUM</span>
+                    <span class="group-range">(10-11)</span>
+                </div>
+                <div class="group-probability" id="mediumProb">0%</div>
+                <div class="group-trend" id="mediumTrend">-</div>
+            </div>
+            <div class="group-stat high-group">
+                <div class="group-header">
+                    <span class="group-icon">🟢</span>
+                    <span class="group-title">HIGH</span>
+                    <span class="group-range">(12-18)</span>
+                </div>
+                <div class="group-probability" id="highProb">0%</div>
+                <div class="group-trend" id="highTrend">-</div>
+            </div>
+        </div>
+
+        <!-- Prediction History (NEW COLUMNS: MEDIAN | HIGH-VOL | LOW-VOL) -->
+        <div class="history-section">
+            <div class="section-header">
+                <h2>📋 PREDICTION HISTORY</h2>
+                <button class="refresh-btn" id="refreshBtn">🔄 Refresh</button>
+            </div>
+            <div class="table-container">
+                <table class="history-table" id="historyTable">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Dice</th>
+                            <th>Total → Actual</th>
+                            <th>📐 MEDIAN</th>
+                            <th>📈 HIGH-VOL</th>
+                            <th>📉 LOW-VOL</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyTableBody">
+                        <tr><td colspan="6">Loading history...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="pagination-controls">
+                <button class="pagination-btn" id="prevPageBtn" disabled>◀ Previous</button>
+                <span class="pagination-info" id="paginationInfo">Page 1 of 1</span>
+                <button class="pagination-btn" id="nextPageBtn" disabled>Next ▶</button>
+            </div>
+        </div>
+
+        <!-- Recent Results -->
+        <div class="recent-section">
+            <div class="section-header">
+                <h2>📊 Recent Results</h2>
+            </div>
+            <div class="results-grid" id="resultsGrid">
+                <div class="loading">Loading results...</div>
+            </div>
+        </div>
+
+        <!-- Number Statistics -->
+        <div class="stats-section collapsible-section">
+            <div class="stats-header" id="statsHeader">
+                <h2>📈 Number Statistics</h2>
+                <span class="toggle-icon" id="toggleIcon">▶</span>
+            </div>
+            <div class="stats-content" id="statsContent" style="display: none;">
+                <div class="table-container">
+                    <table class="stats-table" id="statsTable">
+                        <thead>
+                            <tr><th>Number</th><th>Group</th><th>Frequency</th><th>Percentage</th><th>Last Seen</th></tr>
+                        </thead>
+                        <tbody id="statsTableBody">
+                            <tr><td colspan="5">Loading statistics......</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Auto Refresh Control -->
+        <div class="auto-refresh-control">
+            <label class="switch">
+                <input type="checkbox" id="autoRefreshToggle" checked>
+                <span class="slider round"></span>
+            </label>
+            <span>Auto Refresh (3s)</span>
+            <span class="refresh-timer" id="refreshTimer">3s</span>
+        </div>
+    </div>
+
+    <script src="/script.js"></script>
+</body>
+</html>
