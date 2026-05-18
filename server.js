@@ -1,10 +1,11 @@
 // ============================================================
-// server.js (v14.0 - TRIPLE PREDICTOR AI) - FIXED VERSION
+// server.js (v15.0 - TRIPLE PREDICTOR AI with PRIMARY)
 // Features: 
 // - 10-result analysis with THREE predictors (MEDIAN, HIGH-VOL, LOW-VOL)
+// - NEW: PRIMARY PREDICTION (smart selection based on frequency patterns)
 // - Shared WAITING on duplicate medians
 // - Shared retry system for all predictors
-// - Database stores all three predictions separately
+// - Database stores all predictions including PRIMARY
 // - Telegram: Full notification system for all states
 // ============================================================
 
@@ -111,7 +112,7 @@ const dbPath = path.join(dbDir, 'lightning_dice.db');
 console.log('📂 Database path:', dbPath);
 const db = new sqlite3.Database(dbPath);
 
-// Create tables (UPDATED for v14.0 - Triple Predictor)
+// Create tables (UPDATED for v15.0 - Triple Predictor with PRIMARY)
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS results (
         id TEXT PRIMARY KEY,
@@ -124,7 +125,7 @@ db.serialize(() => {
         payout INTEGER
     )`);
     
-    // Updated predictions table for triple predictors
+    // Updated predictions table for triple predictors with PRIMARY
     db.run(`CREATE TABLE IF NOT EXISTS predictions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         result_id TEXT UNIQUE,
@@ -141,13 +142,18 @@ db.serialize(() => {
         frequencies TEXT,
         confidence INTEGER,
         waiting_reason TEXT,
-        -- New columns for triple predictors
+        -- Columns for triple predictors
         predicted_high_vol TEXT,
         predicted_low_vol TEXT,
         confidence_high_vol INTEGER,
         confidence_low_vol INTEGER,
         is_high_vol_correct INTEGER DEFAULT -1,
-        is_low_vol_correct INTEGER DEFAULT -1
+        is_low_vol_correct INTEGER DEFAULT -1,
+        -- NEW: PRIMARY prediction columns for v15.0
+        predicted_primary TEXT,
+        confidence_primary INTEGER,
+        is_primary_correct INTEGER DEFAULT -1,
+        primary_reason TEXT
     )`);
     
     db.run(`CREATE TABLE IF NOT EXISTS ai_stats (
@@ -196,13 +202,26 @@ db.serialize(() => {
     db.run(`ALTER TABLE predictions ADD COLUMN is_low_vol_correct INTEGER DEFAULT -1`, (err) => {
         if (err && !err.message.includes('duplicate column')) {}
     });
+    // NEW: PRIMARY columns for v15.0
+    db.run(`ALTER TABLE predictions ADD COLUMN predicted_primary TEXT`, (err) => {
+        if (err && !err.message.includes('duplicate column')) {}
+    });
+    db.run(`ALTER TABLE predictions ADD COLUMN confidence_primary INTEGER`, (err) => {
+        if (err && !err.message.includes('duplicate column')) {}
+    });
+    db.run(`ALTER TABLE predictions ADD COLUMN is_primary_correct INTEGER DEFAULT -1`, (err) => {
+        if (err && !err.message.includes('duplicate column')) {}
+    });
+    db.run(`ALTER TABLE predictions ADD COLUMN primary_reason TEXT`, (err) => {
+        if (err && !err.message.includes('duplicate column')) {}
+    });
     
-    console.log('✅ Database tables created/verified (v14.0 Triple Predictor AI ready)');
+    console.log('✅ Database tables created/verified (v15.0 Triple Predictor AI with PRIMARY ready)');
 });
 
 // ============ AI MODEL INITIALIZATION ============
 async function initNewAI() {
-    console.log('🤖 Initializing Triple Predictor Statistical AI (v14.0)...');
+    console.log('🤖 Initializing Triple Predictor Statistical AI (v15.0)...');
     serverAI = new MedianBasedAI();
     
     try {
@@ -236,6 +255,7 @@ async function initNewAI() {
     console.log(`     1. MEDIAN: Unique median prediction`);
     console.log(`     2. HIGH-VOLUME: Most frequent group`);
     console.log(`     3. LOW-VOLUME: Least frequent group`);
+    console.log(`   - 🏆 PRIMARY: Smart selection based on frequency patterns`);
     console.log(`   - WAITING on duplicate median (affects ALL three)`);
     console.log(`   - Shared retry system for all predictors`);
 }
@@ -285,7 +305,7 @@ app.use(express.static('public'));
 
 // ============ WEB SOCKET SERVER ============
 const server = app.listen(PORT, '0.0.0.0', () => {
-    console.log(`\n⚡ Lightning Dice Predictor v14.0 - Triple Predictor AI`);
+    console.log(`\n⚡ Lightning Dice Predictor v15.0 - Triple Predictor AI with PRIMARY`);
     console.log(`📍 http://localhost:${PORT}`);
     console.log(`🚀 Server running on port ${PORT}\n`);
     initNewAI();
@@ -391,15 +411,19 @@ function getPredictionsData(limit = 500) {
                     predictedGroup: p.predicted_group || '--',
                     predictedHighVol: p.predicted_high_vol || null,
                     predictedLowVol: p.predicted_low_vol || null,
+                    predictedPrimary: p.predicted_primary || null,
                     isCorrect: p.is_correct === 1,
                     isHighVolCorrect: p.is_high_vol_correct === 1,
                     isLowVolCorrect: p.is_low_vol_correct === 1,
+                    isPrimaryCorrect: p.is_primary_correct === 1,
                     isRetry: p.is_retry === 1,
                     retryNumber: p.retry_number || 0,
                     medianValue: p.median_value,
                     confidence: p.confidence,
                     confidenceHighVol: p.confidence_high_vol,
                     confidenceLowVol: p.confidence_low_vol,
+                    confidencePrimary: p.confidence_primary,
+                    primaryReason: p.primary_reason,
                     timestamp: new Date(p.prediction_timestamp),
                     isPending: p.actual_group === null
                 }));
@@ -466,7 +490,8 @@ async function getCurrentPredictionData() {
                 LOW: { count: 0, percentage: 0, trend: { emoji: '⚖️', text: 'Waiting' } },
                 MEDIUM: { count: 0, percentage: 0, trend: { emoji: '⚖️', text: 'Waiting' } },
                 HIGH: { count: 0, percentage: 0, trend: { emoji: '⚖️', text: 'Waiting' } }
-            }
+            },
+            primary: { predictedGroup: null, status: "WAITING", confidence: 0 }
         };
     }
     
@@ -483,7 +508,8 @@ async function getCurrentPredictionData() {
         predictedGroup: null,
         confidence: 0,
         waitingForData: true,
-        message: "AI not initialized"
+        message: "AI not initialized",
+        primary: { predictedGroup: null, status: "WAITING", confidence: 0 }
     };
 }
 
@@ -522,6 +548,7 @@ async function savePredictionOnly(resultId, last10Results) {
     console.log(`   MEDIAN: ${prediction.median.predictedGroup} (${prediction.median.confidence}%)`);
     console.log(`   HIGH-VOLUME: ${prediction.highVolume.predictedGroup} (${prediction.highVolume.confidence}%)`);
     console.log(`   LOW-VOLUME: ${prediction.lowVolume.predictedGroup} (${prediction.lowVolume.confidence}%)`);
+    console.log(`   🏆 PRIMARY: ${prediction.primary.predictedGroup} (${prediction.primary.confidence}%) - ${prediction.primary.reason}`);
     console.log(`   Shared Retry Count: ${prediction.retryCount || 0}`);
     
     const frequencies = prediction.frequencies;
@@ -542,6 +569,9 @@ async function savePredictionOnly(resultId, last10Results) {
     const highVolConfidence = prediction.highVolume.confidence;
     const lowVolGroup = prediction.lowVolume.predictedGroup;
     const lowVolConfidence = prediction.lowVolume.confidence;
+    const primaryGroup = prediction.primary.predictedGroup;
+    const primaryConfidence = prediction.primary.confidence;
+    const primaryReason = prediction.primary.reason || prediction.primary.message || '';
     
     if (existing) {
         return new Promise((resolve) => {
@@ -550,6 +580,9 @@ async function savePredictionOnly(resultId, last10Results) {
                     predicted_group = ?,
                     predicted_high_vol = ?,
                     predicted_low_vol = ?,
+                    predicted_primary = ?,
+                    confidence_primary = ?,
+                    primary_reason = ?,
                     prediction_timestamp = ?,
                     is_retry = ?,
                     retry_number = ?,
@@ -560,8 +593,8 @@ async function savePredictionOnly(resultId, last10Results) {
                     confidence_low_vol = ?,
                     waiting_reason = NULL
                     WHERE result_id = ?`,
-                ['TRIPLE_AI', medianGroup, highVolGroup, lowVolGroup, new Date().toISOString(), 
-                 isRetry, retryNumber, prediction.medianValue, frequenciesJson, 
+                ['TRIPLE_AI', medianGroup, highVolGroup, lowVolGroup, primaryGroup, primaryConfidence, primaryReason,
+                 new Date().toISOString(), isRetry, retryNumber, prediction.medianValue, frequenciesJson, 
                  medianConfidence, highVolConfidence, lowVolConfidence, resultId],
                 (err) => {
                     if (err) {
@@ -578,11 +611,12 @@ async function savePredictionOnly(resultId, last10Results) {
         return new Promise((resolve) => {
             db.run(`INSERT INTO predictions (
                     result_id, protection_type, predicted_group, predicted_high_vol, predicted_low_vol,
+                    predicted_primary, confidence_primary, primary_reason,
                     prediction_timestamp, is_correct, is_retry, retry_number, 
                     median_value, frequencies, confidence, confidence_high_vol, confidence_low_vol
-                ) VALUES (?, ?, ?, ?, ?, ?, -1, ?, ?, ?, ?, ?, ?, ?)`,
-                [resultId, 'TRIPLE_AI', medianGroup, highVolGroup, lowVolGroup, new Date().toISOString(),
-                 isRetry, retryNumber, prediction.medianValue, frequenciesJson, 
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, -1, ?, ?, ?, ?, ?, ?, ?)`,
+                [resultId, 'TRIPLE_AI', medianGroup, highVolGroup, lowVolGroup, primaryGroup, primaryConfidence, primaryReason,
+                 new Date().toISOString(), isRetry, retryNumber, prediction.medianValue, frequenciesJson, 
                  medianConfidence, highVolConfidence, lowVolConfidence],
                 (err) => {
                     if (err) {
@@ -599,14 +633,14 @@ async function savePredictionOnly(resultId, last10Results) {
 }
 
 // ============================================================
-// FIXED updatePredictionWithResult - Enhanced version
+// updatePredictionWithResult - Enhanced with PRIMARY tracking
 // ============================================================
 async function updatePredictionWithResult(resultId, actualGroup) {
     console.log(`\n📊 UPDATING TRIPLE PREDICTION with result for ${resultId}:`);
     console.log(`   ACTUAL RESULT: ${actualGroup}`);
     
     const prediction = await new Promise((resolve) => {
-        db.get(`SELECT predicted_group, predicted_high_vol, predicted_low_vol, is_retry, retry_number, confidence 
+        db.get(`SELECT predicted_group, predicted_high_vol, predicted_low_vol, predicted_primary, is_retry, retry_number, confidence 
                 FROM predictions WHERE result_id = ?`, [resultId], (err, row) => {
             if (err) {
                 console.error('Error fetching prediction:', err);
@@ -630,12 +664,14 @@ async function updatePredictionWithResult(resultId, actualGroup) {
     const isMedianCorrect = (prediction.predicted_group === actualGroup) ? 1 : 0;
     const isHighVolCorrect = (prediction.predicted_high_vol === actualGroup) ? 1 : 0;
     const isLowVolCorrect = (prediction.predicted_low_vol === actualGroup) ? 1 : 0;
+    const isPrimaryCorrect = (prediction.predicted_primary === actualGroup) ? 1 : 0;
     const retryCount = prediction.retry_number || 0;
     
     console.log(`   RESULTS:`);
     console.log(`   MEDIAN: ${prediction.predicted_group} → ${isMedianCorrect ? '✓ CORRECT' : '✗ WRONG'}`);
     console.log(`   HIGH-VOL: ${prediction.predicted_high_vol} → ${isHighVolCorrect ? '✓ CORRECT' : '✗ WRONG'}`);
     console.log(`   LOW-VOL: ${prediction.predicted_low_vol} → ${isLowVolCorrect ? '✓ CORRECT' : '✗ WRONG'}`);
+    console.log(`   🏆 PRIMARY: ${prediction.predicted_primary} → ${isPrimaryCorrect ? '✓ CORRECT' : '✗ WRONG'}`);
     
     const last10Results = await getLast10Results();
     
@@ -643,7 +679,8 @@ async function updatePredictionWithResult(resultId, actualGroup) {
     const predictedGroups = {
         median: prediction.predicted_group,
         highVolume: prediction.predicted_high_vol,
-        lowVolume: prediction.predicted_low_vol
+        lowVolume: prediction.predicted_low_vol,
+        primary: prediction.predicted_primary
     };
     
     if (isMedianCorrect === 1) {
@@ -666,9 +703,10 @@ async function updatePredictionWithResult(resultId, actualGroup) {
                 actual_timestamp = ?,
                 is_correct = ?,
                 is_high_vol_correct = ?,
-                is_low_vol_correct = ?
+                is_low_vol_correct = ?,
+                is_primary_correct = ?
                 WHERE result_id = ?`,
-            [actualGroup, new Date().toISOString(), isMedianCorrect, isHighVolCorrect, isLowVolCorrect, resultId],
+            [actualGroup, new Date().toISOString(), isMedianCorrect, isHighVolCorrect, isLowVolCorrect, isPrimaryCorrect, resultId],
             function(err) {
                 if (err) {
                     console.error(`❌ SQL UPDATE ERROR for ${resultId}:`, err.message);
@@ -682,7 +720,7 @@ async function updatePredictionWithResult(resultId, actualGroup) {
                     }
                     updateAIStatsTable(isMedianCorrect === 1);
                     resolve({ success: true, changes: this.changes, 
-                             isMedianCorrect, isHighVolCorrect, isLowVolCorrect });
+                             isMedianCorrect, isHighVolCorrect, isLowVolCorrect, isPrimaryCorrect });
                 }
             }
         );
@@ -800,7 +838,7 @@ async function saveGameResult(game) {
 }
 
 // ============================================================
-// FIXED collectData() function - With proper timing and retry
+// collectData() function - Updated for v15.0
 // ============================================================
 async function collectData() {
     if (isCollecting) return;
@@ -1003,15 +1041,19 @@ app.get('/api/predictions', (req, res) => {
             predicted_group: p.predicted_group,
             predicted_high_vol: p.predicted_high_vol,
             predicted_low_vol: p.predicted_low_vol,
+            predicted_primary: p.predicted_primary,
             is_correct: p.is_correct,
             is_high_vol_correct: p.is_high_vol_correct,
             is_low_vol_correct: p.is_low_vol_correct,
+            is_primary_correct: p.is_primary_correct,
             is_retry: p.is_retry === 1,
             retry_number: p.retry_number || 0,
             median_value: p.median_value,
             confidence: p.confidence,
             confidence_high_vol: p.confidence_high_vol,
             confidence_low_vol: p.confidence_low_vol,
+            confidence_primary: p.confidence_primary,
+            primary_reason: p.primary_reason,
             prediction_timestamp: p.prediction_timestamp,
             is_pending: p.actual_group === null
         }));
@@ -1119,7 +1161,7 @@ app.post('/api/reset-ai', (req, res) => {
 app.get('/api/health', (req, res) => {
     res.json({ 
         status: 'OK', 
-        version: '14.0',
+        version: '15.0',
         timestamp: new Date().toISOString(),
         clients: clients.size,
         uptime: process.uptime(),
@@ -1167,7 +1209,7 @@ app.get('/api/diagnostic', async (req, res) => {
         
         res.json({
             success: true,
-            version: '14.0',
+            version: '15.0',
             database: {
                 path: dbPath,
                 exists: fs.existsSync(dbPath)
@@ -1194,20 +1236,22 @@ app.get('/api/diagnostic', async (req, res) => {
 });
 
 // Start background data collection
-setInterval(collectData, 1000);
+setInterval(collectData, 3000);
 collectData();
 
 console.log('📊 Background data collection started (every 3 seconds)');
-console.log('🤖 Triple Predictor Statistical AI v14.0 active');
-console.log('📊 Core Logic: Analyzes last 10 results with THREE predictors');
+console.log('🤖 Triple Predictor Statistical AI v15.0 active');
+console.log('📊 Core Logic: Analyzes last 10 results with THREE predictors + PRIMARY');
 console.log('   1. MEDIAN (unique median only)');
 console.log('   2. HIGH-VOLUME (most frequent)');
 console.log('   3. LOW-VOLUME (least frequent)');
+console.log('   🏆 PRIMARY: Smart selection based on frequency patterns');
 console.log('🔌 WebSocket server ready for real-time updates');
 console.log('📱 Telegram: Triple notification system');
-console.log('📈 v14.0 Features:');
+console.log('📈 v15.0 Features:');
 console.log('   - 10-result frequency analysis');
 console.log('   - THREE independent predictions');
+console.log('   - 🏆 PRIMARY prediction with smart rules');
 console.log('   - Shared WAITING on duplicate median');
 console.log('   - Shared retry system');
 console.log('   - Real-Time learning via database');
