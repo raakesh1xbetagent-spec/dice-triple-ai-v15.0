@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <meta name="description" content="Lightning Dice Predictor - Triple Predictor Statistical AI v14.0">
-    <title>Lightning Dice Predictor - Triple AI v14.0</title>
+    <meta name="description" content="Lightning Dice Predictor - Triple Predictor Statistical AI v15.0 with PRIMARY">
+    <title>Lightning Dice Predictor - Triple AI v15.0</title>
     <link rel="stylesheet" href="/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
-        /* Additional styles for v14.0 Triple Predictor AI */
+        /* Additional styles for v15.0 Triple Predictor AI with PRIMARY */
         .median-stats-panel {
             background: rgba(0,0,0,0.3);
             border-radius: 12px;
@@ -123,6 +123,7 @@
         .predictor-median { color: #a78bfa; }
         .predictor-highvol { color: #4ade80; }
         .predictor-lowvol { color: #fbbf24; }
+        .predictor-primary { color: #fbbf24; }
         
         .prediction-cell {
             display: inline-block;
@@ -263,7 +264,7 @@
             font-style: italic;
         }
         
-        /* History table column adjustment */
+        /* History table column adjustment - 7 columns for v15.0 */
         .history-table th, .history-table td {
             padding: 8px 6px;
             text-align: center;
@@ -271,10 +272,64 @@
             font-size: 11px;
         }
         
+        .history-table th:nth-child(1) { min-width: 60px; }
+        .history-table th:nth-child(2) { min-width: 70px; }
+        .history-table th:nth-child(3) { min-width: 80px; }
+        .history-table th:nth-child(4) { min-width: 70px; }
+        .history-table th:nth-child(5) { min-width: 70px; }
+        .history-table th:nth-child(6) { min-width: 70px; }
+        .history-table th:nth-child(7) { min-width: 70px; }
+        
         .dice-values {
             font-family: monospace;
             font-size: 11px;
             letter-spacing: 2px;
+        }
+        
+        /* PRIMARY badge style */
+        .primary-badge {
+            background: linear-gradient(135deg, #fbbf24, #f59e0b);
+            color: #1a1a2e;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 9px;
+            font-weight: 700;
+            margin-left: 6px;
+        }
+        
+        /* PRIMARY card highlight */
+        .final-prediction-card .final-title {
+            background: linear-gradient(135deg, #fbbf24, #f59e0b);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .final-prediction-card .final-vote {
+            background: rgba(251, 191, 36, 0.2);
+            color: #fbbf24;
+        }
+        
+        /* Responsive for 7 columns */
+        @media (max-width: 900px) {
+            .history-table th, .history-table td {
+                font-size: 9px;
+                padding: 5px 3px;
+            }
+        }
+        
+        @media (max-width: 700px) {
+            .history-table {
+                font-size: 8px;
+            }
+            .history-table th, .history-table td {
+                padding: 4px 2px;
+            }
+            .prediction-cell {
+                padding: 2px 5px;
+                font-size: 9px;
+                min-width: 55px;
+            }
         }
     </style>
 </head>
@@ -284,7 +339,7 @@
             <div class="logo">
                 <span class="lightning-icon">⚡</span>
                 <h1>Lightning Dice Predictor</h1>
-                <span class="version-badge">v14.0 - TRIPLE AI</span>
+                <span class="version-badge">v15.0 - TRIPLE AI with PRIMARY</span>
             </div>
             <div class="header-buttons">
                 <div class="status-badge" id="connectionStatus">
@@ -315,9 +370,9 @@
             </div>
         </div>
 
-        <!-- ============ TRIPLE PREDICTOR AI SECTION ============ -->
+        <!-- ============ TRIPLE PREDICTOR AI SECTION v15.0 ============ -->
         <div class="prediction-section">
-            <h2>📊 TRIPLE PREDICTOR STATISTICAL AI v14.0</h2>
+            <h2>📊 TRIPLE PREDICTOR STATISTICAL AI v15.0 <span class="primary-badge">PRIMARY SYSTEM</span></h2>
             
             <div class="pattern-info-bar">
                 <div class="info-item">
@@ -384,12 +439,12 @@
                 </div>
             </div>
 
-            <!-- Final Prediction Card (shows MEDIAN as primary) -->
+            <!-- Final Prediction Card (shows PRIMARY prediction for v15.0) -->
             <div class="final-prediction-card">
                 <div class="final-header">
                     <span class="final-icon">🏆</span>
                     <span class="final-title">PRIMARY PREDICTION</span>
-                    <span class="final-vote" id="predictionType">(MEDIAN Predictor)</span>
+                    <span class="final-vote" id="predictionType">(Smart Selection)</span>
                 </div>
                 <div class="final-group" id="finalGroup">
                     <span class="final-group-icon" id="finalIcon">🎯</span>
@@ -407,10 +462,10 @@
             </div>
         </div>
 
-        <!-- ============ HOW TRIPLE AI WORKS ============ -->
+        <!-- ============ HOW TRIPLE AI WORKS (UPDATED for v15.0) ============ -->
         <div class="patterns-reference">
             <div class="section-header">
-                <h2>📚 How Triple Predictor AI Works</h2>
+                <h2>📚 How Triple Predictor AI Works (v15.0)</h2>
             </div>
             <div class="patterns-grid">
                 <div class="pattern-card">
@@ -430,23 +485,28 @@
                     </div>
                 </div>
                 <div class="pattern-card">
-                    <div class="pattern-3step">✅ Step 4: Check Uniqueness</div>
-                    <div class="pattern-actions">If median is UNIQUE → ALL THREE predict</div>
+                    <div class="pattern-3step">🏆 Step 4: PRIMARY Selection</div>
+                    <div class="pattern-actions">
+                        • 3 equal → WAITING<br>
+                        • 2 equal → UNIQUE group<br>
+                        • All different → HIGH-VOLUME
+                    </div>
                 </div>
                 <div class="pattern-card">
                     <div class="pattern-3step">⏳ Step 5: Handle Ties</div>
-                    <div class="pattern-actions">If median duplicate → ALL THREE WAIT</div>
+                    <div class="pattern-actions">If median duplicate → THREE predictors WAIT</div>
                 </div>
                 <div class="pattern-card">
                     <div class="pattern-3step">🔄 Step 6: Shared Retry</div>
-                    <div class="pattern-actions">Wrong prediction? ALL THREE recalculate with updated data</div>
+                    <div class="pattern-actions">Wrong prediction? ALL recalculate with updated data</div>
                 </div>
             </div>
             <div class="pattern-note">
-                💡 <strong>Why Triple Predictor?</strong><br>
-                📐 MEDIAN: Resistant to outliers, represents central tendency<br>
-                📈 HIGH-VOLUME: Follows the trend, predicts the most common outcome<br>
-                📉 LOW-VOLUME: Contrarian approach, predicts the least common outcome<br>
+                💡 <strong>v15.0 NEW: PRIMARY PREDICTION SYSTEM</strong><br>
+                🏆 <strong>Rule 1:</strong> All groups equal → WAITING<br>
+                🏆 <strong>Rule 2:</strong> Two groups equal → Predict the UNIQUE group<br>
+                🏆 <strong>Rule 3:</strong> All groups different → Predict HIGH-VOLUME (most frequent)<br>
+                📐 MEDIAN, 📈 HIGH-VOLUME, 📉 LOW-VOLUME remain available for reference<br>
                 🔄 Shared WAITING & Retry: All three predictors wait together and retry together
             </div>
         </div>
@@ -482,26 +542,27 @@
             </div>
         </div>
 
-        <!-- Prediction History (NEW COLUMNS: MEDIAN | HIGH-VOL | LOW-VOL) -->
+        <!-- Prediction History (UPDATED: 7 columns including PRIMARY) -->
         <div class="history-section">
             <div class="section-header">
-                <h2>📋 PREDICTION HISTORY</h2>
+                <h2>📋 PREDICTION HISTORY <span class="primary-badge">🏆 PRIMARY Column Added</span></h2>
                 <button class="refresh-btn" id="refreshBtn">🔄 Refresh</button>
             </div>
             <div class="table-container">
                 <table class="history-table" id="historyTable">
                     <thead>
                         <tr>
-                            <th>Time</th>
-                            <th>Dice</th>
-                            <th>Total → Actual</th>
+                            <th>⏰ Time</th>
+                            <th>🎲 Dice</th>
+                            <th>🔢 Total → Actual</th>
+                            <th>🏆 PRIMARY</th>
                             <th>📐 MEDIAN</th>
                             <th>📈 HIGH-VOL</th>
                             <th>📉 LOW-VOL</th>
                         </tr>
                     </thead>
                     <tbody id="historyTableBody">
-                        <tr><td colspan="6">Loading history...</td></tr>
+                        <tr><td colspan="7">Loading history...<\/td><\/tr>
                     </tbody>
                 </table>
             </div>
@@ -535,7 +596,7 @@
                             <tr><th>Number</th><th>Group</th><th>Frequency</th><th>Percentage</th><th>Last Seen</th></tr>
                         </thead>
                         <tbody id="statsTableBody">
-                            <tr><td colspan="5">Loading statistics......</td></tr>
+                            <tr><td colspan="5">Loading statistics......<\/td><\/tr>
                         </tbody>
                     </table>
                 </div>
