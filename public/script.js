@@ -1,9 +1,10 @@
 // ============================================================
-// COMPLETE script.js (UPDATED FOR v15.0 - TRIPLE PREDICTOR AI with PRIMARY)
+// COMPLETE script.js (UPDATED FOR v15.1 - TRIPLE PREDICTOR AI with PRIMARY)
 // Features: 
 // - THREE predictions: MEDIAN, HIGH-VOLUME, LOW-VOLUME
 // - NEW: 🏆 PRIMARY PREDICTION (smart selection based on frequency patterns)
-// - Shared WAITING display
+// - PRIMARY works independently even when others are WAITING
+// - Supports PRIMARY_ACTIVE status
 // - Color-coded history (green = correct, red = wrong)
 // - History table with 7 columns (including PRIMARY)
 // - Trend analysis
@@ -34,7 +35,7 @@ class LightningDiceApp {
     }
     
     async init() {
-        console.log('🚀 Initializing Triple Predictor Statistical AI System v15.0 with PRIMARY...');
+        console.log('🚀 Initializing Triple Predictor Statistical AI System v15.1 with PRIMARY...');
         this.bindEvents();
         this.setupAutoRefresh();
         
@@ -142,29 +143,28 @@ class LightningDiceApp {
             if (medianValueEl) medianValueEl.textContent = median;
         }
         
-        // Check if waiting mode
-        if (this.currentPrediction.status === 'WAITING') {
-            if (medianPredictionEl) medianPredictionEl.innerHTML = '<span class="waiting-text">⏳ WAITING</span>';
-            if (highVolPredictionEl) highVolPredictionEl.innerHTML = '<span class="waiting-text">⏳ WAITING</span>';
-            if (lowVolPredictionEl) lowVolPredictionEl.innerHTML = '<span class="waiting-text">⏳ WAITING</span>';
-            if (medianConfidenceEl) medianConfidenceEl.textContent = '0%';
-            if (highVolConfidenceEl) highVolConfidenceEl.textContent = '0%';
-            if (lowVolConfidenceEl) lowVolConfidenceEl.textContent = '0%';
-            return;
-        }
-        
-        // PREDICTION_READY - show all three predictions
+        // Get predictor data
         const median = this.currentPrediction.median;
         const highVolume = this.currentPrediction.highVolume;
         const lowVolume = this.currentPrediction.lowVolume;
         
+        // Update MEDIAN display
         if (median && medianPredictionEl) {
-            medianPredictionEl.innerHTML = `${this.getGroupIcon(median.predictedGroup)} ${median.predictedGroup}`;
-            if (medianConfidenceEl) medianConfidenceEl.textContent = `${median.confidence}%`;
+            if (median.status === 'WAITING') {
+                medianPredictionEl.innerHTML = '<span class="waiting-text">⏳ WAITING</span>';
+                if (medianConfidenceEl) medianConfidenceEl.textContent = '0%';
+            } else {
+                medianPredictionEl.innerHTML = `${this.getGroupIcon(median.predictedGroup)} ${median.predictedGroup}`;
+                if (medianConfidenceEl) medianConfidenceEl.textContent = `${median.confidence}%`;
+            }
         }
         
+        // Update HIGH-VOLUME display
         if (highVolume && highVolPredictionEl) {
-            if (highVolume.status === 'ACTIVE') {
+            if (highVolume.status === 'WAITING') {
+                highVolPredictionEl.innerHTML = '<span class="waiting-text">⏳ WAITING</span>';
+                if (highVolConfidenceEl) highVolConfidenceEl.textContent = '0%';
+            } else if (highVolume.status === 'ACTIVE') {
                 highVolPredictionEl.innerHTML = `${this.getGroupIcon(highVolume.predictedGroup)} ${highVolume.predictedGroup}`;
                 if (highVolConfidenceEl) highVolConfidenceEl.textContent = `${highVolume.confidence}%`;
             } else if (highVolume.status === 'TIE') {
@@ -176,8 +176,12 @@ class LightningDiceApp {
             }
         }
         
+        // Update LOW-VOLUME display
         if (lowVolume && lowVolPredictionEl) {
-            if (lowVolume.status === 'ACTIVE') {
+            if (lowVolume.status === 'WAITING') {
+                lowVolPredictionEl.innerHTML = '<span class="waiting-text">⏳ WAITING</span>';
+                if (lowVolConfidenceEl) lowVolConfidenceEl.textContent = '0%';
+            } else if (lowVolume.status === 'ACTIVE') {
                 lowVolPredictionEl.innerHTML = `${this.getGroupIcon(lowVolume.predictedGroup)} ${lowVolume.predictedGroup}`;
                 if (lowVolConfidenceEl) lowVolConfidenceEl.textContent = `${lowVolume.confidence}%`;
             } else if (lowVolume.status === 'TIE') {
@@ -256,13 +260,19 @@ class LightningDiceApp {
         const finalExplanation = document.getElementById('finalExplanation');
         const finalWeights = document.getElementById('finalWeights');
         
+        // Check if PRIMARY_ACTIVE (new status for v15.1)
+        if (prediction.status === 'PRIMARY_ACTIVE') {
+            this.showPrimaryActiveState();
+            return;
+        }
+        
         // Check if waiting for data
         if (prediction.status === 'WAITING' || prediction.waitingForData) {
             this.showWaitingState();
             return;
         }
         
-        // Prediction ready - show PRIMARY as main prediction (NEW for v15.0)
+        // PREDICTION_READY - show PRIMARY as main prediction
         const median = prediction.median;
         const highVolume = prediction.highVolume;
         const lowVolume = prediction.lowVolume;
@@ -271,15 +281,15 @@ class LightningDiceApp {
         const retryCount = prediction.retryCount || 0;
         const stats = prediction.stats;
         
-        // Use PRIMARY prediction for the main display if available, otherwise fallback to MEDIAN
+        // Use PRIMARY prediction for the main display
         const mainPrediction = (primary && primary.predictedGroup) ? primary : median;
         const mainPredictionGroup = mainPrediction.predictedGroup;
         const mainConfidence = mainPrediction.confidence;
         
         if (predictionStatusEl) predictionStatusEl.innerHTML = '<span class="status-active">🎯 PREDICTION ACTIVE</span>';
-        if (activeModelDisplay) activeModelDisplay.innerHTML = '<span class="status-match">TRIPLE AI v15.0 ACTIVE</span>';
+        if (activeModelDisplay) activeModelDisplay.innerHTML = '<span class="status-match">TRIPLE AI v15.1 ACTIVE</span>';
         
-        // Final prediction card (shows PRIMARY now)
+        // Final prediction card (shows PRIMARY)
         if (finalIcon) finalIcon.textContent = this.getGroupIcon(mainPredictionGroup);
         if (finalName) finalName.textContent = mainPredictionGroup;
         if (finalRange) finalRange.textContent = `(${this.getGroupRange(mainPredictionGroup)})`;
@@ -303,9 +313,18 @@ class LightningDiceApp {
         // Explanation with all predictions including PRIMARY
         const retryText = isRetry ? `<br><span style="color:#fbbf24;">🔄 SHARED RETRY #${retryCount + 1} - Recalculated with updated data</span>` : '';
         
+        // Get predictor display texts (handle WAITING status)
+        const medianDisplay = median && median.predictedGroup ? `${this.getGroupIcon(median.predictedGroup)} ${median.predictedGroup}` : '⏳ WAITING';
+        const highVolDisplay = highVolume && highVolume.predictedGroup ? `${this.getGroupIcon(highVolume.predictedGroup)} ${highVolume.predictedGroup}` : (highVolume?.status === 'TIE' ? '⚖️ TIE' : '⏳ WAITING');
+        const lowVolDisplay = lowVolume && lowVolume.predictedGroup ? `${this.getGroupIcon(lowVolume.predictedGroup)} ${lowVolume.predictedGroup}` : (lowVolume?.status === 'TIE' ? '⚖️ TIE' : '⏳ WAITING');
+        
+        const medianConfidenceText = (median && median.confidence) ? `${median.confidence}%` : '0%';
+        const highVolConfidenceText = (highVolume && highVolume.confidence) ? `${highVolume.confidence}%` : '0%';
+        const lowVolConfidenceText = (lowVolume && lowVolume.confidence) ? `${lowVolume.confidence}%` : '0%';
+        
         if (finalExplanation) {
             finalExplanation.innerHTML = `
-                <strong>📊 TRIPLE PREDICTOR STATISTICAL AI v15.0</strong><br><br>
+                <strong>📊 TRIPLE PREDICTOR STATISTICAL AI v15.1</strong><br><br>
                 📐 <strong>Last 10 Frequencies:</strong><br>
                 🔴 LOW: ${stats.LOW.count} times (${stats.LOW.percentage}%) ${stats.LOW.trend.emoji}<br>
                 🟡 MEDIUM: ${stats.MEDIUM.count} times (${stats.MEDIUM.percentage}%) ${stats.MEDIUM.trend.emoji}<br>
@@ -315,9 +334,9 @@ class LightningDiceApp {
                 🏆 <strong>PRIMARY PREDICTION:</strong> <strong style="color:#fbbf24;">${primary.predictedGroup || 'WAITING'}</strong> (${primary.confidence || 0}% confidence)<br>
                 <span style="font-size:11px;">${primaryReasonText}</span><br><br>
                 🎯 <strong>THREE PREDICTORS:</strong><br>
-                📐 MEDIAN: <strong style="color:#a78bfa;">${median.predictedGroup}</strong> (${median.confidence}% confidence)<br>
-                📈 HIGH-VOLUME: <strong style="color:#4ade80;">${highVolume.predictedGroup || 'TIE'}</strong> (${highVolume.confidence || 0}% confidence)<br>
-                📉 LOW-VOLUME: <strong style="color:#fbbf24;">${lowVolume.predictedGroup || 'TIE'}</strong> (${lowVolume.confidence || 0}% confidence)<br><br>
+                📐 MEDIAN: <strong style="color:#a78bfa;">${medianDisplay}</strong> (${medianConfidenceText} confidence)<br>
+                📈 HIGH-VOLUME: <strong style="color:#4ade80;">${highVolDisplay}</strong> (${highVolConfidenceText} confidence)<br>
+                📉 LOW-VOLUME: <strong style="color:#fbbf24;">${lowVolDisplay}</strong> (${lowVolConfidenceText} confidence)<br><br>
                 💡 <em>${primary.message || `Smart selection based on frequency patterns.`}</em>
                 ${retryText}
             `;
@@ -337,6 +356,103 @@ class LightningDiceApp {
         }
         
         // Update triple display
+        this.updateTripleDisplay();
+    }
+    
+    /**
+     * NEW: Show PRIMARY_ACTIVE state (PRIMARY works, others waiting)
+     */
+    showPrimaryActiveState() {
+        const predictionStatusEl = document.getElementById('predictionStatus');
+        const activeModelDisplay = document.getElementById('activeModelDisplay');
+        const finalName = document.getElementById('finalName');
+        const finalConfidence = document.getElementById('finalConfidence');
+        const confidenceFill = document.getElementById('confidenceFill');
+        const finalExplanation = document.getElementById('finalExplanation');
+        const finalWeights = document.getElementById('finalWeights');
+        const finalIcon = document.getElementById('finalIcon');
+        const finalRange = document.getElementById('finalRange');
+        
+        const primary = this.currentPrediction?.primary;
+        const stats = this.currentPrediction?.stats;
+        const median = this.currentPrediction?.median;
+        const highVolume = this.currentPrediction?.highVolume;
+        const lowVolume = this.currentPrediction?.lowVolume;
+        
+        if (predictionStatusEl) predictionStatusEl.innerHTML = '<span class="status-active">🏆 PRIMARY ACTIVE</span>';
+        if (activeModelDisplay) activeModelDisplay.innerHTML = '<span class="status-match">PRIMARY v15.1 ACTIVE</span>';
+        
+        // Show PRIMARY prediction in final card
+        if (primary && primary.predictedGroup) {
+            if (finalIcon) finalIcon.textContent = this.getGroupIcon(primary.predictedGroup);
+            if (finalName) finalName.textContent = primary.predictedGroup;
+            if (finalRange) finalRange.textContent = `(${this.getGroupRange(primary.predictedGroup)})`;
+            if (confidenceFill) confidenceFill.style.width = `${primary.confidence}%`;
+            if (finalConfidence) finalConfidence.textContent = `${primary.confidence}%`;
+        } else {
+            if (finalName) finalName.textContent = 'WAITING';
+            if (finalConfidence) finalConfidence.textContent = '0%';
+            if (confidenceFill) confidenceFill.style.width = '0%';
+        }
+        
+        // Get primary reason text
+        let primaryReasonText = '';
+        if (primary && primary.reason) {
+            if (primary.reason === 'UNIQUE_GROUP_FROM_DUPLICATE') {
+                primaryReasonText = '🎯 PRIMARY: Unique group from duplicate frequencies';
+            } else if (primary.reason === 'HIGH_VOLUME_FROM_ALL_DIFFERENT') {
+                primaryReasonText = '📈 PRIMARY: HIGH-VOLUME (all groups different)';
+            } else {
+                primaryReasonText = primary.message || '';
+            }
+        }
+        
+        const waitingReason = this.currentPrediction?.waitingReason || 'DUPLICATE_MEDIAN';
+        let waitingReasonText = '';
+        if (waitingReason === 'ALL_GROUPS_EQUAL') {
+            waitingReasonText = 'All three groups have equal frequency';
+        } else if (waitingReason === 'DUPLICATE_MEDIAN') {
+            waitingReasonText = 'Median value appears in multiple groups';
+        } else {
+            waitingReasonText = 'Waiting for unique median condition';
+        }
+        
+        // Get predictor display texts (all WAITING except PRIMARY)
+        const medianDisplay = '⏳ WAITING';
+        const highVolDisplay = '⏳ WAITING';
+        const lowVolDisplay = '⏳ WAITING';
+        
+        if (finalExplanation) {
+            finalExplanation.innerHTML = `
+                <strong>📊 TRIPLE PREDICTOR STATISTICAL AI v15.1</strong><br><br>
+                📐 <strong>Last 10 Frequencies:</strong><br>
+                🔴 LOW: ${stats?.LOW?.count || 0} times (${stats?.LOW?.percentage || 0}%) ${stats?.LOW?.trend?.emoji || '⚖️'}<br>
+                🟡 MEDIUM: ${stats?.MEDIUM?.count || 0} times (${stats?.MEDIUM?.percentage || 0}%) ${stats?.MEDIUM?.trend?.emoji || '⚖️'}<br>
+                🟢 HIGH: ${stats?.HIGH?.count || 0} times (${stats?.HIGH?.percentage || 0}%) ${stats?.HIGH?.trend?.emoji || '⚖️'}<br><br>
+                ⚠️ <strong>MEDIAN/HIGH-VOL/LOW-VOL Status:</strong> WAITING (${waitingReasonText})<br><br>
+                🏆 <strong>PRIMARY PREDICTION (ACTIVE):</strong> <strong style="color:#fbbf24;">${primary?.predictedGroup || 'WAITING'}</strong> (${primary?.confidence || 0}% confidence)<br>
+                <span style="font-size:11px;">${primaryReasonText}</span><br><br>
+                🎯 <strong>THREE PREDICTORS (WAITING):</strong><br>
+                📐 MEDIAN: <strong style="color:#a78bfa;">${medianDisplay}</strong><br>
+                📈 HIGH-VOLUME: <strong style="color:#4ade80;">${highVolDisplay}</strong><br>
+                📉 LOW-VOLUME: <strong style="color:#fbbf24;">${lowVolDisplay}</strong><br><br>
+                💡 <em>PRIMARY prediction works independently. Others will activate when median becomes unique.</em>
+            `;
+        }
+        
+        if (finalWeights && stats) {
+            finalWeights.innerHTML = `
+                <div class="median-stats-panel">
+                    <div class="median-title">📊 Current Frequencies</div>
+                    <div class="median-bars">
+                        <div class="median-bar low-bar" style="width: ${stats.LOW.percentage}%">LOW ${stats.LOW.percentage}%</div>
+                        <div class="median-bar medium-bar" style="width: ${stats.MEDIUM.percentage}%">MED ${stats.MEDIUM.percentage}%</div>
+                        <div class="median-bar high-bar" style="width: ${stats.HIGH.percentage}%">HIGH ${stats.HIGH.percentage}%</div>
+                    </div>
+                </div>
+            `;
+        }
+        
         this.updateTripleDisplay();
     }
     
@@ -384,7 +500,7 @@ class LightningDiceApp {
                 🟡 MEDIUM: ${stats.MEDIUM.count} times (${stats.MEDIUM.percentage}%) ${stats.MEDIUM.trend.emoji}<br>
                 🟢 HIGH: ${stats.HIGH.count} times (${stats.HIGH.percentage}%) ${stats.HIGH.trend.emoji}<br><br>
                 ⚠️ <strong>Reason:</strong> ${waitingMessage}${primaryWaitingText}<br><br>
-                💡 <em>Three predictors wait for unique median condition.</em>
+                💡 <em>Three predictors wait for unique median condition. PRIMARY may still be active.</em>
             `;
         } else if (finalExplanation) {
             finalExplanation.innerHTML = `
@@ -494,7 +610,7 @@ class LightningDiceApp {
                 actualDisplay = `⏳ Pending`;
             }
             
-            // Get PRIMARY prediction and correctness (NEW for v15.0)
+            // Get PRIMARY prediction and correctness
             const primaryGroup = item.predictedPrimary || item.predictedGroup;
             const isPrimaryCorrect = item.isPrimaryCorrect !== undefined ? item.isPrimaryCorrect : item.isCorrect;
             
