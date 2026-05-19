@@ -1,5 +1,5 @@
 // ============================================================
-// COMPLETE script.js (UPDATED FOR v15.1 - TRIPLE PREDICTOR AI with PRIMARY)
+// COMPLETE script.js (UPDATED FOR v15.2 - TRIPLE PREDICTOR AI with PRIMARY)
 // Features: 
 // - THREE predictions: MEDIAN, HIGH-VOLUME, LOW-VOLUME
 // - NEW: 🏆 PRIMARY PREDICTION (smart selection based on frequency patterns)
@@ -7,6 +7,7 @@
 // - Supports PRIMARY_ACTIVE status
 // - Color-coded history (green = correct, red = wrong)
 // - History table with 7 columns (including PRIMARY)
+// - FIXED: Shows "⏳ WAITING" for null/empty prediction values
 // - Trend analysis
 // ============================================================
 
@@ -35,7 +36,7 @@ class LightningDiceApp {
     }
     
     async init() {
-        console.log('🚀 Initializing Triple Predictor Statistical AI System v15.1 with PRIMARY...');
+        console.log('🚀 Initializing Triple Predictor Statistical AI System v15.2 with PRIMARY...');
         this.bindEvents();
         this.setupAutoRefresh();
         
@@ -58,16 +59,15 @@ class LightningDiceApp {
                 return new Date(b.timestamp) - new Date(a.timestamp);
             });
             
-            // Filter out WAITING predictions from history
+            // Keep all predictions including PRIMARY_ACTIVE rounds
             this.predictionHistory = (data.predictions || []).filter(p => {
-                return p.predictedGroup && 
-                       p.predictedGroup !== 'WAITING' && 
-                       p.predictedGroup !== '--';
+                return (p.predictedGroup && p.predictedGroup !== 'WAITING' && p.predictedGroup !== '--') ||
+                       (p.predictedPrimary && p.predictedPrimary !== 'WAITING' && p.predictedPrimary !== '--');
             });
             this.currentPrediction = data.currentPrediction || null;
             this.last10Groups = data.last10Groups || [];
             
-            console.log(`✅ Filtered prediction history: ${this.predictionHistory.length} valid predictions`);
+            console.log(`✅ Filtered prediction history: ${this.predictionHistory.length} valid predictions (including PRIMARY_ACTIVE)`);
             console.log(`📊 Last 10 groups: ${this.last10Groups.join(' → ')}`);
             
             this.displayPrediction(this.currentPrediction);
@@ -260,7 +260,7 @@ class LightningDiceApp {
         const finalExplanation = document.getElementById('finalExplanation');
         const finalWeights = document.getElementById('finalWeights');
         
-        // Check if PRIMARY_ACTIVE (new status for v15.1)
+        // Check if PRIMARY_ACTIVE (new status for v15.2)
         if (prediction.status === 'PRIMARY_ACTIVE') {
             this.showPrimaryActiveState();
             return;
@@ -283,11 +283,11 @@ class LightningDiceApp {
         
         // Use PRIMARY prediction for the main display
         const mainPrediction = (primary && primary.predictedGroup) ? primary : median;
-        const mainPredictionGroup = mainPrediction.predictedGroup;
-        const mainConfidence = mainPrediction.confidence;
+        const mainPredictionGroup = mainPrediction?.predictedGroup || 'WAITING';
+        const mainConfidence = mainPrediction?.confidence || 0;
         
         if (predictionStatusEl) predictionStatusEl.innerHTML = '<span class="status-active">🎯 PREDICTION ACTIVE</span>';
-        if (activeModelDisplay) activeModelDisplay.innerHTML = '<span class="status-match">TRIPLE AI v15.1 ACTIVE</span>';
+        if (activeModelDisplay) activeModelDisplay.innerHTML = '<span class="status-match">TRIPLE AI v15.2 ACTIVE</span>';
         
         // Final prediction card (shows PRIMARY)
         if (finalIcon) finalIcon.textContent = this.getGroupIcon(mainPredictionGroup);
@@ -324,7 +324,7 @@ class LightningDiceApp {
         
         if (finalExplanation) {
             finalExplanation.innerHTML = `
-                <strong>📊 TRIPLE PREDICTOR STATISTICAL AI v15.1</strong><br><br>
+                <strong>📊 TRIPLE PREDICTOR STATISTICAL AI v15.2</strong><br><br>
                 📐 <strong>Last 10 Frequencies:</strong><br>
                 🔴 LOW: ${stats.LOW.count} times (${stats.LOW.percentage}%) ${stats.LOW.trend.emoji}<br>
                 🟡 MEDIUM: ${stats.MEDIUM.count} times (${stats.MEDIUM.percentage}%) ${stats.MEDIUM.trend.emoji}<br>
@@ -375,12 +375,9 @@ class LightningDiceApp {
         
         const primary = this.currentPrediction?.primary;
         const stats = this.currentPrediction?.stats;
-        const median = this.currentPrediction?.median;
-        const highVolume = this.currentPrediction?.highVolume;
-        const lowVolume = this.currentPrediction?.lowVolume;
         
         if (predictionStatusEl) predictionStatusEl.innerHTML = '<span class="status-active">🏆 PRIMARY ACTIVE</span>';
-        if (activeModelDisplay) activeModelDisplay.innerHTML = '<span class="status-match">PRIMARY v15.1 ACTIVE</span>';
+        if (activeModelDisplay) activeModelDisplay.innerHTML = '<span class="status-match">PRIMARY v15.2 ACTIVE</span>';
         
         // Show PRIMARY prediction in final card
         if (primary && primary.predictedGroup) {
@@ -424,7 +421,7 @@ class LightningDiceApp {
         
         if (finalExplanation) {
             finalExplanation.innerHTML = `
-                <strong>📊 TRIPLE PREDICTOR STATISTICAL AI v15.1</strong><br><br>
+                <strong>📊 TRIPLE PREDICTOR STATISTICAL AI v15.2</strong><br><br>
                 📐 <strong>Last 10 Frequencies:</strong><br>
                 🔴 LOW: ${stats?.LOW?.count || 0} times (${stats?.LOW?.percentage || 0}%) ${stats?.LOW?.trend?.emoji || '⚖️'}<br>
                 🟡 MEDIUM: ${stats?.MEDIUM?.count || 0} times (${stats?.MEDIUM?.percentage || 0}%) ${stats?.MEDIUM?.trend?.emoji || '⚖️'}<br>
@@ -562,12 +559,15 @@ class LightningDiceApp {
         if (lightningBoostEl) lightningBoostEl.textContent = `${stats.lightningBoost || 0}%`;
     }
     
+    // ============================================================
+    // FIXED: renderHistoryTable - Shows "⏳ WAITING" for null values
+    // ============================================================
     renderHistoryTable() {
         const tbody = document.getElementById('historyTableBody');
         if (!tbody) return;
         
         if (!this.predictionHistory || this.predictionHistory.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7">No predictions yet. Waiting for unique median condition...</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7">No predictions yet. Waiting for unique median condition......</td></tr>';
             this.updatePaginationControls();
             return;
         }
@@ -589,18 +589,25 @@ class LightningDiceApp {
                 return '⚪';
             };
             
+            // FIXED: Handle null, undefined, WAITING, -- values properly
             const getPredictionCell = (predictedGroup, isCorrect) => {
-                if (!predictedGroup || predictedGroup === 'WAITING' || predictedGroup === '--') {
-                    return `<span class="prediction-cell pending">⏳ --</span>`;
+                // Check if prediction is missing, null, undefined, or WAITING
+                if (!predictedGroup || predictedGroup === 'WAITING' || predictedGroup === '--' || predictedGroup === null || predictedGroup === 'null') {
+                    return `<span class="prediction-cell pending">⏳ WAITING</span>`;
                 }
                 const icon = getIcon(predictedGroup);
-                const correctClass = isCorrect === true ? 'correct' : (isCorrect === false ? 'incorrect' : 'pending');
-                const checkIcon = isCorrect === true ? '✓' : (isCorrect === false ? '✗' : '⏳');
+                // Handle isCorrect: true/false/null/undefined
+                let correctClass = 'pending';
+                let checkIcon = '⏳';
+                if (isCorrect === true) {
+                    correctClass = 'correct';
+                    checkIcon = '✓';
+                } else if (isCorrect === false) {
+                    correctClass = 'incorrect';
+                    checkIcon = '✗';
+                }
                 return `<span class="prediction-cell ${correctClass}">${icon} ${predictedGroup} ${checkIcon}</span>`;
             };
-            
-            // Shared retry text for all columns
-            const retryText = '';
             
             // Actual group display
             let actualDisplay = '';
@@ -612,20 +619,23 @@ class LightningDiceApp {
             
             // Get PRIMARY prediction and correctness
             const primaryGroup = item.predictedPrimary || item.predictedGroup;
-            const isPrimaryCorrect = item.isPrimaryCorrect !== undefined ? item.isPrimaryCorrect : item.isCorrect;
+            const isPrimaryCorrect = item.isPrimaryCorrect !== undefined && item.isPrimaryCorrect !== null ? item.isPrimaryCorrect : item.isCorrect;
             
             // Median info display
             const medianInfo = item.medianValue ? `<div class="small-info">📐 ${item.medianValue}</div>` : '';
+            
+            // Retry badge if applicable
+            const retryBadge = (item.retryNumber && item.retryNumber > 0) ? `<div class="retry-badge">🔄 #${item.retryNumber}</div>` : '';
             
             return `
                 <tr>
                     <td style="font-size: 11px;">${item.time || '--'}</td>
                     <td class="dice-values" style="font-size: 11px;">🎲 ${item.dice || '--'}</td>
                     <td><strong>${item.total || '--'}</strong><br><small>${actualDisplay}</small></td>
-                    <td>${getPredictionCell(primaryGroup, isPrimaryCorrect)}${retryText}</td>
-                    <td>${getPredictionCell(item.predictedGroup, item.isCorrect)}${retryText}${medianInfo}</td>
-                    <td>${getPredictionCell(item.predictedHighVol, item.isHighVolCorrect)}${retryText}</td>
-                    <td>${getPredictionCell(item.predictedLowVol, item.isLowVolCorrect)}${retryText}</td>
+                    <td>${getPredictionCell(primaryGroup, isPrimaryCorrect)}${retryBadge}</td>
+                    <td>${getPredictionCell(item.predictedGroup, item.isCorrect)}${medianInfo}</td>
+                    <td>${getPredictionCell(item.predictedHighVol, item.isHighVolCorrect)}${retryBadge}</td>
+                    <td>${getPredictionCell(item.predictedLowVol, item.isLowVolCorrect)}${retryBadge}</td>
                 </tr>
             `;
         }).join('');
@@ -803,9 +813,12 @@ class LightningDiceApp {
             this.updateGroupProbabilities();
         }
         
-        // Update prediction history (only valid predictions)
+        // Update prediction history (including PRIMARY_ACTIVE rounds)
         if (data.history) {
-            this.predictionHistory = data.history;
+            this.predictionHistory = data.history.filter(p => {
+                return (p.predictedGroup && p.predictedGroup !== 'WAITING' && p.predictedGroup !== '--') ||
+                       (p.predictedPrimary && p.predictedPrimary !== 'WAITING' && p.predictedPrimary !== '--');
+            });
             this.renderHistoryTable();
         }
         
