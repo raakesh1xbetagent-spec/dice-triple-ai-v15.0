@@ -1,9 +1,10 @@
 // ============================================================
-// server.js (v15.0 - TRIPLE PREDICTOR AI with PRIMARY)
+// server.js (v15.1 - TRIPLE PREDICTOR AI with PRIMARY_ACTIVE support)
 // Features: 
 // - 10-result analysis with THREE predictors (MEDIAN, HIGH-VOL, LOW-VOL)
-// - NEW: PRIMARY PREDICTION (smart selection based on frequency patterns)
-// - Shared WAITING on duplicate medians
+// - PRIMARY PREDICTION (smart selection based on frequency patterns)
+// - PRIMARY_ACTIVE status - PRIMARY works even when others WAITING
+// - Shared WAITING on duplicate medians (affects MEDIAN/HIGH-VOL/LOW-VOL only)
 // - Shared retry system for all predictors
 // - Database stores all predictions including PRIMARY
 // - Telegram: Full notification system for all states
@@ -112,7 +113,7 @@ const dbPath = path.join(dbDir, 'lightning_dice.db');
 console.log('📂 Database path:', dbPath);
 const db = new sqlite3.Database(dbPath);
 
-// Create tables (UPDATED for v15.0 - Triple Predictor with PRIMARY)
+// Create tables (UPDATED for v15.1 - Triple Predictor with PRIMARY)
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS results (
         id TEXT PRIMARY KEY,
@@ -149,7 +150,7 @@ db.serialize(() => {
         confidence_low_vol INTEGER,
         is_high_vol_correct INTEGER DEFAULT -1,
         is_low_vol_correct INTEGER DEFAULT -1,
-        -- NEW: PRIMARY prediction columns for v15.0
+        -- PRIMARY prediction columns
         predicted_primary TEXT,
         confidence_primary INTEGER,
         is_primary_correct INTEGER DEFAULT -1,
@@ -202,7 +203,7 @@ db.serialize(() => {
     db.run(`ALTER TABLE predictions ADD COLUMN is_low_vol_correct INTEGER DEFAULT -1`, (err) => {
         if (err && !err.message.includes('duplicate column')) {}
     });
-    // NEW: PRIMARY columns for v15.0
+    // PRIMARY columns
     db.run(`ALTER TABLE predictions ADD COLUMN predicted_primary TEXT`, (err) => {
         if (err && !err.message.includes('duplicate column')) {}
     });
@@ -216,12 +217,12 @@ db.serialize(() => {
         if (err && !err.message.includes('duplicate column')) {}
     });
     
-    console.log('✅ Database tables created/verified (v15.0 Triple Predictor AI with PRIMARY ready)');
+    console.log('✅ Database tables created/verified (v15.1 Triple Predictor AI with PRIMARY_ACTIVE ready)');
 });
 
 // ============ AI MODEL INITIALIZATION ============
 async function initNewAI() {
-    console.log('🤖 Initializing Triple Predictor Statistical AI (v15.0)...');
+    console.log('🤖 Initializing Triple Predictor Statistical AI (v15.1)...');
     serverAI = new MedianBasedAI();
     
     try {
@@ -251,12 +252,13 @@ async function initNewAI() {
     console.log(`✅ AI ready - Triple Predictor Statistical AI v${serverAI.version}`);
     console.log(`📊 Core Logic:`);
     console.log(`   - Analyzes last 10 results`);
-    console.log(`   - THREE PREDICTORS:`);
+    console.log(`   - THREE PREDICTORS + PRIMARY:`);
     console.log(`     1. MEDIAN: Unique median prediction`);
     console.log(`     2. HIGH-VOLUME: Most frequent group`);
     console.log(`     3. LOW-VOLUME: Least frequent group`);
-    console.log(`   - 🏆 PRIMARY: Smart selection based on frequency patterns`);
-    console.log(`   - WAITING on duplicate median (affects ALL three)`);
+    console.log(`     4. 🏆 PRIMARY: Smart selection (independent of median waiting)`);
+    console.log(`   - WAITING on duplicate median (affects MEDIAN/HIGH-VOL/LOW-VOL only)`);
+    console.log(`   - PRIMARY stays ACTIVE even when others WAITING`);
     console.log(`   - Shared retry system for all predictors`);
 }
 
@@ -305,7 +307,7 @@ app.use(express.static('public'));
 
 // ============ WEB SOCKET SERVER ============
 const server = app.listen(PORT, '0.0.0.0', () => {
-    console.log(`\n⚡ Lightning Dice Predictor v15.0 - Triple Predictor AI with PRIMARY`);
+    console.log(`\n⚡ Lightning Dice Predictor v15.1 - Triple Predictor AI with PRIMARY_ACTIVE`);
     console.log(`📍 http://localhost:${PORT}`);
     console.log(`🚀 Server running on port ${PORT}\n`);
     initNewAI();
@@ -513,6 +515,9 @@ async function getCurrentPredictionData() {
     };
 }
 
+// ============================================================
+// UPDATED savePredictionOnly - Supports PRIMARY_ACTIVE status
+// ============================================================
 async function savePredictionOnly(resultId, last10Results) {
     if (!last10Results || last10Results.length < 10) {
         console.log(`⚠️ Cannot save prediction for ${resultId}: need 10 results, have ${last10Results?.length || 0}`);
@@ -523,9 +528,17 @@ async function savePredictionOnly(resultId, last10Results) {
     
     const prediction = await getCurrentPredictionData();
     
-    // Don't save if no valid prediction (WAITING mode)
-    if (prediction.status === "WAITING" || !prediction.median || !prediction.median.predictedGroup) {
-        console.log(`⚠️ NOT saving prediction for ${resultId} - AI is in WAITING mode`);
+    // Check if PRIMARY is active (even if others are waiting)
+    const isPrimaryActive = prediction.primary && 
+                           prediction.primary.status === "ACTIVE" && 
+                           prediction.primary.predictedGroup;
+    
+    const isPredictionReady = prediction.status === "PREDICTION_READY";
+    const isPrimaryActiveCase = prediction.status === "PRIMARY_ACTIVE" && isPrimaryActive;
+    
+    // Don't save if truly no prediction (no PRIMARY active and not PREDICTION_READY)
+    if (!isPredictionReady && !isPrimaryActiveCase) {
+        console.log(`⚠️ NOT saving prediction for ${resultId} - No active prediction (status: ${prediction.status})`);
         
         // Still save waiting state for tracking
         const existing = await new Promise((resolve) => {
@@ -544,11 +557,23 @@ async function savePredictionOnly(resultId, last10Results) {
         return null;
     }
     
+    // Get prediction data (handle both PREDICTION_READY and PRIMARY_ACTIVE)
+    const medianGroup = prediction.median?.predictedGroup || null;
+    const medianConfidence = prediction.median?.confidence || 0;
+    const highVolGroup = prediction.highVolume?.predictedGroup || null;
+    const highVolConfidence = prediction.highVolume?.confidence || 0;
+    const lowVolGroup = prediction.lowVolume?.predictedGroup || null;
+    const lowVolConfidence = prediction.lowVolume?.confidence || 0;
+    const primaryGroup = prediction.primary?.predictedGroup || null;
+    const primaryConfidence = prediction.primary?.confidence || 0;
+    const primaryReason = prediction.primary?.reason || prediction.primary?.message || '';
+    
     console.log(`\n📝 SAVING TRIPLE PREDICTION for ${resultId}:`);
-    console.log(`   MEDIAN: ${prediction.median.predictedGroup} (${prediction.median.confidence}%)`);
-    console.log(`   HIGH-VOLUME: ${prediction.highVolume.predictedGroup} (${prediction.highVolume.confidence}%)`);
-    console.log(`   LOW-VOLUME: ${prediction.lowVolume.predictedGroup} (${prediction.lowVolume.confidence}%)`);
-    console.log(`   🏆 PRIMARY: ${prediction.primary.predictedGroup} (${prediction.primary.confidence}%) - ${prediction.primary.reason}`);
+    console.log(`   🏆 PRIMARY: ${primaryGroup || 'WAITING'} (${primaryConfidence}%)`);
+    console.log(`   📐 MEDIAN: ${medianGroup || 'WAITING'} (${medianConfidence}%)`);
+    console.log(`   📈 HIGH-VOL: ${highVolGroup || 'WAITING'} (${highVolConfidence}%)`);
+    console.log(`   📉 LOW-VOL: ${lowVolGroup || 'WAITING'} (${lowVolConfidence}%)`);
+    console.log(`   Status: ${prediction.status}`);
     console.log(`   Shared Retry Count: ${prediction.retryCount || 0}`);
     
     const frequencies = prediction.frequencies;
@@ -562,16 +587,6 @@ async function savePredictionOnly(resultId, last10Results) {
     
     const isRetry = prediction.isRetry ? 1 : 0;
     const retryNumber = prediction.retryCount || 0;
-    
-    const medianGroup = prediction.median.predictedGroup;
-    const medianConfidence = prediction.median.confidence;
-    const highVolGroup = prediction.highVolume.predictedGroup;
-    const highVolConfidence = prediction.highVolume.confidence;
-    const lowVolGroup = prediction.lowVolume.predictedGroup;
-    const lowVolConfidence = prediction.lowVolume.confidence;
-    const primaryGroup = prediction.primary.predictedGroup;
-    const primaryConfidence = prediction.primary.confidence;
-    const primaryReason = prediction.primary.reason || prediction.primary.message || '';
     
     if (existing) {
         return new Promise((resolve) => {
@@ -601,7 +616,7 @@ async function savePredictionOnly(resultId, last10Results) {
                         console.error('Error updating prediction:', err);
                         resolve(null);
                     } else {
-                        console.log(`✅ Triple Prediction UPDATED for ${resultId}`);
+                        console.log(`✅ Triple Prediction UPDATED for ${resultId} (${prediction.status})`);
                         resolve(prediction);
                     }
                 }
@@ -623,7 +638,7 @@ async function savePredictionOnly(resultId, last10Results) {
                         console.error('Error saving prediction:', err);
                         resolve(null);
                     } else {
-                        console.log(`✅ Triple Prediction INSERTED for ${resultId}`);
+                        console.log(`✅ Triple Prediction INSERTED for ${resultId} (${prediction.status})`);
                         resolve(prediction);
                     }
                 }
@@ -656,8 +671,8 @@ async function updatePredictionWithResult(resultId, actualGroup) {
         return null;
     }
     
-    if (prediction.predicted_group === 'WAITING') {
-        console.log(`⚠️ Prediction was WAITING mode, skipping result update`);
+    if (prediction.predicted_group === 'WAITING' && !prediction.predicted_primary) {
+        console.log(`⚠️ Prediction was WAITING mode with no PRIMARY, skipping result update`);
         return null;
     }
     
@@ -668,10 +683,10 @@ async function updatePredictionWithResult(resultId, actualGroup) {
     const retryCount = prediction.retry_number || 0;
     
     console.log(`   RESULTS:`);
-    console.log(`   MEDIAN: ${prediction.predicted_group} → ${isMedianCorrect ? '✓ CORRECT' : '✗ WRONG'}`);
-    console.log(`   HIGH-VOL: ${prediction.predicted_high_vol} → ${isHighVolCorrect ? '✓ CORRECT' : '✗ WRONG'}`);
-    console.log(`   LOW-VOL: ${prediction.predicted_low_vol} → ${isLowVolCorrect ? '✓ CORRECT' : '✗ WRONG'}`);
     console.log(`   🏆 PRIMARY: ${prediction.predicted_primary} → ${isPrimaryCorrect ? '✓ CORRECT' : '✗ WRONG'}`);
+    console.log(`   📐 MEDIAN: ${prediction.predicted_group || 'WAITING'} → ${isMedianCorrect ? '✓ CORRECT' : '✗ WRONG'}`);
+    console.log(`   📈 HIGH-VOL: ${prediction.predicted_high_vol || 'WAITING'} → ${isHighVolCorrect ? '✓ CORRECT' : '✗ WRONG'}`);
+    console.log(`   📉 LOW-VOL: ${prediction.predicted_low_vol || 'WAITING'} → ${isLowVolCorrect ? '✓ CORRECT' : '✗ WRONG'}`);
     
     const last10Results = await getLast10Results();
     
@@ -683,14 +698,14 @@ async function updatePredictionWithResult(resultId, actualGroup) {
         primary: prediction.predicted_primary
     };
     
-    if (isMedianCorrect === 1) {
+    if (isPrimaryCorrect === 1) {
         await sendTelegramCorrect(predictedGroups, actualGroup, retryCount);
-    } else {
+    } else if (prediction.predicted_primary) {
         await sendTelegramWrong(predictedGroups, actualGroup, retryCount + 1);
     }
     
-    // Update AI state
-    if (serverAI && last10Results.length >= 10) {
+    // Update AI state (only if MEDIAN prediction exists)
+    if (serverAI && last10Results.length >= 10 && prediction.predicted_group) {
         serverAI.updateWithResult(actualGroup, last10Results);
         console.log(`   Shared AI Accuracy updated: ${serverAI.getAccuracy().toFixed(1)}%`);
         console.log(`   Shared Wrong Count: ${serverAI.consecutiveWrongCount}`);
@@ -718,7 +733,10 @@ async function updatePredictionWithResult(resultId, actualGroup) {
                     } else {
                         console.log(`✅ Triple Prediction UPDATED with result for ${resultId}`);
                     }
-                    updateAIStatsTable(isMedianCorrect === 1);
+                    // Only update AI stats if median prediction existed
+                    if (prediction.predicted_group) {
+                        updateAIStatsTable(isMedianCorrect === 1);
+                    }
                     resolve({ success: true, changes: this.changes, 
                              isMedianCorrect, isHighVolCorrect, isLowVolCorrect, isPrimaryCorrect });
                 }
@@ -838,7 +856,7 @@ async function saveGameResult(game) {
 }
 
 // ============================================================
-// collectData() function - Updated for v15.0
+// collectData() function - Updated for v15.1
 // ============================================================
 async function collectData() {
     if (isCollecting) return;
@@ -880,7 +898,7 @@ async function collectData() {
                         console.log(`🔮 Saving triple prediction FIRST for ${gameId}...`);
                         predictionData = await savePredictionOnly(gameId, last10Results);
                         
-                        if (predictionData && predictionData.status === 'PREDICTION_READY') {
+                        if (predictionData && (predictionData.status === 'PREDICTION_READY' || predictionData.status === 'PRIMARY_ACTIVE')) {
                             await sendTelegramPrediction(predictionData);
                         } else if (predictionData && predictionData.status === 'WAITING') {
                             await sendTelegramWaiting(predictionData);
@@ -1161,7 +1179,7 @@ app.post('/api/reset-ai', (req, res) => {
 app.get('/api/health', (req, res) => {
     res.json({ 
         status: 'OK', 
-        version: '15.0',
+        version: '15.1',
         timestamp: new Date().toISOString(),
         clients: clients.size,
         uptime: process.uptime(),
@@ -1209,7 +1227,7 @@ app.get('/api/diagnostic', async (req, res) => {
         
         res.json({
             success: true,
-            version: '15.0',
+            version: '15.1',
             database: {
                 path: dbPath,
                 exists: fs.existsSync(dbPath)
@@ -1240,19 +1258,21 @@ setInterval(collectData, 3000);
 collectData();
 
 console.log('📊 Background data collection started (every 3 seconds)');
-console.log('🤖 Triple Predictor Statistical AI v15.0 active');
+console.log('🤖 Triple Predictor Statistical AI v15.1 active');
 console.log('📊 Core Logic: Analyzes last 10 results with THREE predictors + PRIMARY');
 console.log('   1. MEDIAN (unique median only)');
 console.log('   2. HIGH-VOLUME (most frequent)');
 console.log('   3. LOW-VOLUME (least frequent)');
-console.log('   🏆 PRIMARY: Smart selection based on frequency patterns');
+console.log('   4. 🏆 PRIMARY: Smart selection based on frequency patterns');
+console.log('🔌 PRIMARY_ACTIVE status: PRIMARY works even when others WAITING');
 console.log('🔌 WebSocket server ready for real-time updates');
-console.log('📱 Telegram: Triple notification system');
-console.log('📈 v15.0 Features:');
+console.log('📱 Telegram: Triple notification system with PRIMARY');
+console.log('📈 v15.1 Features:');
 console.log('   - 10-result frequency analysis');
 console.log('   - THREE independent predictions');
 console.log('   - 🏆 PRIMARY prediction with smart rules');
-console.log('   - Shared WAITING on duplicate median');
+console.log('   - PRIMARY_ACTIVE: PRIMARY works when median duplicates');
+console.log('   - Shared WAITING on duplicate median (MEDIAN/HIGH-VOL/LOW-VOL only)');
 console.log('   - Shared retry system');
 console.log('   - Real-Time learning via database');
 
