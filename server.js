@@ -1,9 +1,10 @@
 // ============================================================
-// server.js (v15.1 - TRIPLE PREDICTOR AI with PRIMARY_ACTIVE support)
+// server.js (v15.2 - FIXED PRIMARY_ACTIVE history display)
 // Features: 
 // - 10-result analysis with THREE predictors (MEDIAN, HIGH-VOL, LOW-VOL)
 // - PRIMARY PREDICTION (smart selection based on frequency patterns)
 // - PRIMARY_ACTIVE status - PRIMARY works even when others WAITING
+// - FIXED: PRIMARY_ACTIVE rounds now appear in history table
 // - Shared WAITING on duplicate medians (affects MEDIAN/HIGH-VOL/LOW-VOL only)
 // - Shared retry system for all predictors
 // - Database stores all predictions including PRIMARY
@@ -113,7 +114,7 @@ const dbPath = path.join(dbDir, 'lightning_dice.db');
 console.log('📂 Database path:', dbPath);
 const db = new sqlite3.Database(dbPath);
 
-// Create tables (UPDATED for v15.1 - Triple Predictor with PRIMARY)
+// Create tables (UPDATED for v15.2 - Triple Predictor with PRIMARY)
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS results (
         id TEXT PRIMARY KEY,
@@ -217,12 +218,12 @@ db.serialize(() => {
         if (err && !err.message.includes('duplicate column')) {}
     });
     
-    console.log('✅ Database tables created/verified (v15.1 Triple Predictor AI with PRIMARY_ACTIVE ready)');
+    console.log('✅ Database tables created/verified (v15.2 Triple Predictor AI with PRIMARY_ACTIVE fix)');
 });
 
 // ============ AI MODEL INITIALIZATION ============
 async function initNewAI() {
-    console.log('🤖 Initializing Triple Predictor Statistical AI (v15.1)...');
+    console.log('🤖 Initializing Triple Predictor Statistical AI (v15.2)...');
     serverAI = new MedianBasedAI();
     
     try {
@@ -260,6 +261,7 @@ async function initNewAI() {
     console.log(`   - WAITING on duplicate median (affects MEDIAN/HIGH-VOL/LOW-VOL only)`);
     console.log(`   - PRIMARY stays ACTIVE even when others WAITING`);
     console.log(`   - Shared retry system for all predictors`);
+    console.log(`   - FIXED: PRIMARY_ACTIVE rounds show in history table`);
 }
 
 // Initialize Telegram Bot
@@ -307,7 +309,7 @@ app.use(express.static('public'));
 
 // ============ WEB SOCKET SERVER ============
 const server = app.listen(PORT, '0.0.0.0', () => {
-    console.log(`\n⚡ Lightning Dice Predictor v15.1 - Triple Predictor AI with PRIMARY_ACTIVE`);
+    console.log(`\n⚡ Lightning Dice Predictor v15.2 - Triple Predictor AI with PRIMARY_ACTIVE`);
     console.log(`📍 http://localhost:${PORT}`);
     console.log(`🚀 Server running on port ${PORT}\n`);
     initNewAI();
@@ -392,13 +394,17 @@ function getLast10Results() {
     });
 }
 
+// ============================================================
+// FIXED: getPredictionsData - Now includes PRIMARY_ACTIVE rounds
+// ============================================================
 function getPredictionsData(limit = 500) {
     return new Promise((resolve) => {
+        // FIXED: Include rounds where PRIMARY is active even if MEDIAN is WAITING
         db.all(`SELECT p.*, r.total, r.dice_values, r.timestamp as result_time
                 FROM predictions p
                 LEFT JOIN results r ON p.result_id = r.id
-                WHERE p.predicted_group IS NOT NULL 
-                  AND p.predicted_group != 'WAITING'
+                WHERE (p.predicted_group IS NOT NULL AND p.predicted_group != 'WAITING')
+                   OR (p.predicted_primary IS NOT NULL AND p.predicted_primary != 'WAITING')
                 ORDER BY p.prediction_timestamp DESC LIMIT ?`, [limit], (err, rows) => {
             if (err) {
                 console.error('Error in getPredictionsData:', err);
@@ -429,7 +435,7 @@ function getPredictionsData(limit = 500) {
                     timestamp: new Date(p.prediction_timestamp),
                     isPending: p.actual_group === null
                 }));
-                console.log(`✅ getPredictionsData returning ${transformed.length} valid predictions`);
+                console.log(`✅ getPredictionsData returning ${transformed.length} valid predictions (including PRIMARY_ACTIVE)`);
                 resolve(transformed);
             }
         });
@@ -516,7 +522,7 @@ async function getCurrentPredictionData() {
 }
 
 // ============================================================
-// UPDATED savePredictionOnly - Supports PRIMARY_ACTIVE status
+// savePredictionOnly - Supports PRIMARY_ACTIVE status
 // ============================================================
 async function savePredictionOnly(resultId, last10Results) {
     if (!last10Results || last10Results.length < 10) {
@@ -856,7 +862,7 @@ async function saveGameResult(game) {
 }
 
 // ============================================================
-// collectData() function - Updated for v15.1
+// collectData() function - Updated for v15.2
 // ============================================================
 async function collectData() {
     if (isCollecting) return;
@@ -1035,14 +1041,18 @@ app.get('/api/all-data', async (req, res) => {
     }
 });
 
+// ============================================================
+// FIXED: /api/predictions endpoint - Now includes PRIMARY_ACTIVE rounds
+// ============================================================
 app.get('/api/predictions', (req, res) => {
     const limit = parseInt(req.query.limit) || 500;
     
+    // FIXED: Include rounds where PRIMARY is active even if MEDIAN is WAITING
     db.all(`SELECT p.*, r.total, r.dice_values, r.timestamp as result_time
             FROM predictions p
             LEFT JOIN results r ON p.result_id = r.id
-            WHERE p.predicted_group IS NOT NULL 
-              AND p.predicted_group != 'WAITING'
+            WHERE (p.predicted_group IS NOT NULL AND p.predicted_group != 'WAITING')
+               OR (p.predicted_primary IS NOT NULL AND p.predicted_primary != 'WAITING')
             ORDER BY p.prediction_timestamp DESC LIMIT ?`, [limit], (err, predictions) => {
         if (err) {
             res.status(500).json({ error: err.message });
@@ -1179,7 +1189,7 @@ app.post('/api/reset-ai', (req, res) => {
 app.get('/api/health', (req, res) => {
     res.json({ 
         status: 'OK', 
-        version: '15.1',
+        version: '15.2',
         timestamp: new Date().toISOString(),
         clients: clients.size,
         uptime: process.uptime(),
@@ -1198,7 +1208,10 @@ app.get('/api/diagnostic', async (req, res) => {
         });
         
         const predictionsCount = await new Promise((resolve) => {
-            db.get(`SELECT COUNT(*) as count FROM predictions WHERE predicted_group IS NOT NULL AND predicted_group != 'WAITING'`, (err, row) => {
+            db.get(`SELECT COUNT(*) as count FROM predictions 
+                    WHERE (predicted_group IS NOT NULL AND predicted_group != 'WAITING')
+                       OR (predicted_primary IS NOT NULL AND predicted_primary != 'WAITING')`, 
+                    (err, row) => {
                 resolve(row ? row.count : 0);
             });
         });
@@ -1227,7 +1240,7 @@ app.get('/api/diagnostic', async (req, res) => {
         
         res.json({
             success: true,
-            version: '15.1',
+            version: '15.2',
             database: {
                 path: dbPath,
                 exists: fs.existsSync(dbPath)
@@ -1258,23 +1271,16 @@ setInterval(collectData, 3000);
 collectData();
 
 console.log('📊 Background data collection started (every 3 seconds)');
-console.log('🤖 Triple Predictor Statistical AI v15.1 active');
+console.log('🤖 Triple Predictor Statistical AI v15.2 active');
 console.log('📊 Core Logic: Analyzes last 10 results with THREE predictors + PRIMARY');
 console.log('   1. MEDIAN (unique median only)');
 console.log('   2. HIGH-VOLUME (most frequent)');
 console.log('   3. LOW-VOLUME (least frequent)');
 console.log('   4. 🏆 PRIMARY: Smart selection based on frequency patterns');
 console.log('🔌 PRIMARY_ACTIVE status: PRIMARY works even when others WAITING');
+console.log('🔌 FIXED: PRIMARY_ACTIVE rounds now appear in history table');
 console.log('🔌 WebSocket server ready for real-time updates');
 console.log('📱 Telegram: Triple notification system with PRIMARY');
-console.log('📈 v15.1 Features:');
-console.log('   - 10-result frequency analysis');
-console.log('   - THREE independent predictions');
-console.log('   - 🏆 PRIMARY prediction with smart rules');
-console.log('   - PRIMARY_ACTIVE: PRIMARY works when median duplicates');
-console.log('   - Shared WAITING on duplicate median (MEDIAN/HIGH-VOL/LOW-VOL only)');
-console.log('   - Shared retry system');
-console.log('   - Real-Time learning via database');
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
