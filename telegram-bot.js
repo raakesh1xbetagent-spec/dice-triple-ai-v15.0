@@ -1,10 +1,12 @@
 // ============================================================
-// telegram-bot.js (v15.0 - TRIPLE PREDICTOR with PRIMARY)
+// telegram-bot.js (v15.2 - PRIMARY ONLY with NEXT prediction)
 // 
 // Features:
-// - NEW: PRIMARY PREDICTION display (smart selection)
-// - Shows PRIMARY, MEDIAN, HIGH-VOLUME, LOW-VOLUME
-// - Clean, compact format with PRIMARY highlighted
+// - ONLY PRIMARY prediction display (simplified)
+// - Shows NEXT prediction with confidence
+// - Others: WAITING in one line
+// - Shows retry count when applicable
+// - CORRECT ✅ / WRONG ❌ with clean format
 // - Rate limiting to avoid spam
 // - Full command support (/predict, /stats, /history, /status, /reset)
 // ============================================================
@@ -44,7 +46,7 @@ class TelegramBot {
         if (this.isEnabled) {
             console.log(`📱 Chat ID: ${this.chatId}`);
             console.log(`🌐 API Base URL: ${this.apiBaseUrl}`);
-            console.log(`📊 Format: TRIPLE PREDICTOR v15.0 with PRIMARY`);
+            console.log(`📊 Format: PRIMARY ONLY v15.2 with NEXT prediction`);
         }
     }
     
@@ -63,9 +65,9 @@ class TelegramBot {
         
         const commands = [
             { command: 'start', description: '🤖 Start bot & get current status' },
-            { command: 'predict', description: '🎯 Get current AI prediction (PRIMARY + triple)' },
+            { command: 'predict', description: '🎯 Get current PRIMARY prediction' },
             { command: 'stats', description: '📊 Show last 10 results statistics' },
-            { command: 'history', description: '📜 Show last 10 prediction history' },
+            { command: 'history', description: '📜 Show last 10 PRIMARY prediction history' },
             { command: 'status', description: '🔍 Show AI system status' },
             { command: 'reset', description: '🔄 Reset AI state (admin only)' }
         ];
@@ -153,18 +155,17 @@ class TelegramBot {
      * Get result icon
      */
     getResultIcon(isCorrect) {
-        if (isCorrect === true) return '✅';
-        if (isCorrect === false) return '❌';
+        if (isCorrect === true) return '✓';
+        if (isCorrect === false) return '✗';
         return '⏳';
     }
     
     // ============================================================
-    // v15.0 NEW METHODS WITH PRIMARY SUPPORT
+    // v15.2 PRIMARY ONLY METHODS
     // ============================================================
     
     /**
      * Send prediction notification (called from server.js)
-     * Now includes PRIMARY prediction
      */
     async sendPredictionNotification(predictionData) {
         if (!this.isEnabled) return;
@@ -184,12 +185,7 @@ class TelegramBot {
             predictedGroup: primaryGroup
         };
         
-        const frequencies = predictionData?.stats;
-        await this.sendTriplePredictionNotification(predictionData, {
-            LOW: frequencies?.LOW?.count || 0,
-            MEDIUM: frequencies?.MEDIUM?.count || 0,
-            HIGH: frequencies?.HIGH?.count || 0
-        });
+        await this.sendPrimaryPredictionNotification(predictionData);
     }
     
     /**
@@ -210,17 +206,11 @@ class TelegramBot {
             predictedGroup: null
         };
         
-        const frequencies = waitingData?.stats;
-        await this.sendTripleWaitingNotification(waitingData, {
-            LOW: frequencies?.LOW?.count || 0,
-            MEDIUM: frequencies?.MEDIUM?.count || 0,
-            HIGH: frequencies?.HIGH?.count || 0
-        });
+        await this.sendPrimaryWaitingNotification(waitingData);
     }
     
     /**
-     * Send correct notification for triple predictors (called from server.js)
-     * Now includes PRIMARY correctness
+     * Send correct notification (called from server.js)
      */
     async sendTripleCorrectNotification(predictedGroups, actualGroup, retryCount) {
         if (!this.isEnabled) return;
@@ -234,31 +224,14 @@ class TelegramBot {
         this.lastNotification = {
             type: 'correct',
             timestamp: now,
-            predictedGroup: predictedGroups.primary || predictedGroups.median
+            predictedGroup: predictedGroups.primary
         };
         
-        const primaryIcon = this.getGroupIcon(predictedGroups.primary);
-        const medianIcon = this.getGroupIcon(predictedGroups.median);
-        const highVolIcon = this.getGroupIcon(predictedGroups.highVolume);
-        const lowVolIcon = this.getGroupIcon(predictedGroups.lowVolume);
-        const actualIcon = this.getGroupIcon(actualGroup);
-        
-        const message = `✅ TRIPLE PREDICTOR v15.0 - CORRECT!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🏆 PRIMARY: ${primaryIcon} ${predictedGroups.primary} → ${actualIcon} ${actualGroup} ✓
-📐 MEDIAN: ${medianIcon} ${predictedGroups.median} → ${actualIcon} ${actualGroup} ✓
-📈 HIGH-VOL: ${highVolIcon} ${predictedGroups.highVolume} → ${actualIcon} ${actualGroup} ✓
-📉 LOW-VOL: ${lowVolIcon} ${predictedGroups.lowVolume} → ${actualIcon} ${actualGroup} ✓
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔄 Shared Retry Count: ${retryCount || 0}`;
-        
-        await this.sendMessage(message);
-        console.log(`📱 Telegram: Triple correct notification sent (PRIMARY:${predictedGroups.primary}→${actualGroup})`);
+        await this.sendPrimaryCorrectNotification(predictedGroups, actualGroup, retryCount);
     }
     
     /**
-     * Send wrong notification for triple predictors (called from server.js)
-     * Now includes PRIMARY correctness
+     * Send wrong notification (called from server.js)
      */
     async sendTripleWrongNotification(predictedGroups, actualGroup, retryCount) {
         if (!this.isEnabled) return;
@@ -272,220 +245,185 @@ class TelegramBot {
         this.lastNotification = {
             type: 'wrong',
             timestamp: now,
-            predictedGroup: predictedGroups.primary || predictedGroups.median
+            predictedGroup: predictedGroups.primary
         };
         
-        const primaryIcon = this.getGroupIcon(predictedGroups.primary);
-        const medianIcon = this.getGroupIcon(predictedGroups.median);
-        const highVolIcon = this.getGroupIcon(predictedGroups.highVolume);
-        const lowVolIcon = this.getGroupIcon(predictedGroups.lowVolume);
-        const actualIcon = this.getGroupIcon(actualGroup);
-        
-        const primaryStatus = predictedGroups.primary === actualGroup ? '✓' : '✗';
-        const medianStatus = predictedGroups.median === actualGroup ? '✓' : '✗';
-        const highVolStatus = predictedGroups.highVolume === actualGroup ? '✓' : '✗';
-        const lowVolStatus = predictedGroups.lowVolume === actualGroup ? '✓' : '✗';
-        
-        const message = `❌ TRIPLE PREDICTOR v15.0 - WRONG!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🏆 PRIMARY: ${primaryIcon} ${predictedGroups.primary} → ${actualIcon} ${actualGroup} ${primaryStatus}
-📐 MEDIAN: ${medianIcon} ${predictedGroups.median} → ${actualIcon} ${actualGroup} ${medianStatus}
-📈 HIGH-VOL: ${highVolIcon} ${predictedGroups.highVolume} → ${actualIcon} ${actualGroup} ${highVolStatus}
-📉 LOW-VOL: ${lowVolIcon} ${predictedGroups.lowVolume} → ${actualIcon} ${actualGroup} ${lowVolStatus}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔄 Next Retry: #${retryCount}`;
-        
-        await this.sendMessage(message);
-        console.log(`📱 Telegram: Triple wrong notification sent (PRIMARY:${predictedGroups.primary}→${actualGroup})`);
+        await this.sendPrimaryWrongNotification(predictedGroups, actualGroup, retryCount);
     }
     
     // ============================================================
-    // v15.0 UPDATED NOTIFICATION METHODS
+    // v15.2 PRIMARY ONLY NOTIFICATION METHODS
     // ============================================================
     
     /**
-     * Send TRIPLE PREDICTOR active prediction notification (without result)
-     * UPDATED: Now shows PRIMARY as main prediction
+     * Send PRIMARY prediction notification (active prediction without result)
      */
-    async sendTriplePredictionNotification(predictionData, frequencies) {
-        if (!this.isEnabled) return;
-        
-        // Rate limiting
-        const now = Date.now();
-        const primaryGroup = predictionData?.primary?.predictedGroup;
-        if (this.lastNotification.type === 'prediction' && 
-            this.lastNotification.predictedGroup === primaryGroup &&
-            now - this.lastNotification.timestamp < 2000) {
-            return;
-        }
-        
-        this.lastNotification = {
-            type: 'prediction',
-            timestamp: now,
-            predictedGroup: primaryGroup
-        };
-        
+    async sendPrimaryPredictionNotification(predictionData) {
         const primary = predictionData?.primary;
-        const median = predictionData?.median;
-        const highVolume = predictionData?.highVolume;
-        const lowVolume = predictionData?.lowVolume;
+        const stats = predictionData?.stats;
         
-        const primaryPredicted = primary?.predictedGroup || '?';
+        const primaryPredicted = primary?.predictedGroup || 'WAITING';
         const primaryConfidence = primary?.confidence || 0;
-        const primaryReason = primary?.reason || '';
-        
-        const medianPredicted = median?.predictedGroup || '?';
-        const medianConfidence = median?.confidence || 0;
-        const highVolPredicted = highVolume?.predictedGroup || '?';
-        const highVolConfidence = highVolume?.confidence || 0;
-        const lowVolPredicted = lowVolume?.predictedGroup || '?';
-        const lowVolConfidence = lowVolume?.confidence || 0;
-        
         const primaryIcon = this.getGroupIcon(primaryPredicted);
-        const medianIcon = this.getGroupIcon(medianPredicted);
-        const highVolIcon = this.getGroupIcon(highVolPredicted);
-        const lowVolIcon = this.getGroupIcon(lowVolPredicted);
         
         let reasonText = '';
-        if (primaryReason === 'UNIQUE_GROUP_FROM_DUPLICATE') {
-            reasonText = '🎯 Selected: Unique group from duplicate';
-        } else if (primaryReason === 'HIGH_VOLUME_FROM_ALL_DIFFERENT') {
-            reasonText = '📈 Selected: HIGH-VOLUME (all different)';
-        } else {
-            reasonText = primary?.message || '';
+        if (primary?.reason === 'UNIQUE_GROUP_FROM_DUPLICATE') {
+            reasonText = '🎯 Unique group from duplicate';
+        } else if (primary?.reason === 'HIGH_VOLUME_FROM_ALL_DIFFERENT') {
+            reasonText = '📈 HIGH-VOLUME (all different)';
+        } else if (primary?.reason === 'ALL_GROUPS_EQUAL') {
+            reasonText = '⚖️ All groups equal';
         }
         
-        let message = `📊 TRIPLE PREDICTOR v15.0 - ACTIVE
+        let message = `📊 PRIMARY PREDICTOR v15.2 - ACTIVE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🏆 PRIMARY: ${primaryIcon} ${primaryPredicted} (${primaryConfidence}%)
-💡 ${reasonText}
+💡 ${reasonText || primary?.message || 'Smart selection based on frequency patterns'}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📐 MEDIAN: ${medianIcon} ${medianPredicted} (${medianConfidence}%)
-📈 HIGH-VOL: ${highVolIcon} ${highVolPredicted} (${highVolConfidence}%)
-📉 LOW-VOL: ${lowVolIcon} ${lowVolPredicted} (${lowVolConfidence}%)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📊 LOW=${frequencies?.LOW || 0} | MED=${frequencies?.MEDIUM || 0} | HIGH=${frequencies?.HIGH || 0}
+📊 LOW=${stats?.LOW?.count || 0} | MED=${stats?.MEDIUM?.count || 0} | HIGH=${stats?.HIGH?.count || 0}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ⏳ Waiting for next result...`;
         
         await this.sendMessage(message);
-        console.log(`📱 Telegram: Triple prediction sent (PRIMARY:${primaryPredicted})`);
+        console.log(`📱 Telegram: PRIMARY prediction sent (${primaryPredicted})`);
     }
     
     /**
-     * Send TRIPLE PREDICTOR waiting notification
-     * UPDATED: Shows PRIMARY status as well
+     * Send PRIMARY waiting notification
      */
-    async sendTripleWaitingNotification(waitingData, frequencies) {
-        if (!this.isEnabled) return;
-        
-        // Rate limiting
-        const now = Date.now();
-        if (this.lastNotification.type === 'waiting' && now - this.lastNotification.timestamp < 10000) {
-            return;
-        }
-        
-        this.lastNotification = {
-            type: 'waiting',
-            timestamp: now,
-            predictedGroup: null
-        };
+    async sendPrimaryWaitingNotification(waitingData) {
+        const waitingReason = waitingData?.waitingReason || 'UNKNOWN';
+        const stats = waitingData?.stats;
+        const primary = waitingData?.primary;
         
         let waitingReasonText = '';
-        if (waitingData.waitingReason === 'ALL_GROUPS_EQUAL') {
-            waitingReasonText = 'All groups equal';
-        } else if (waitingData.waitingReason === 'DUPLICATE_MEDIAN') {
-            waitingReasonText = 'Duplicate median';
+        if (waitingReason === 'ALL_GROUPS_EQUAL') {
+            waitingReasonText = 'All three groups have equal frequency';
+        } else if (waitingReason === 'DUPLICATE_MEDIAN') {
+            waitingReasonText = 'Duplicate median - waiting for unique condition';
+        } else if (waitingReason === 'INSUFFICIENT_DATA') {
+            waitingReasonText = 'Need 10 results for analysis';
         } else {
-            waitingReasonText = 'No unique median';
+            waitingReasonText = 'Waiting for unique median condition';
         }
         
-        // Check if PRIMARY has a prediction even in waiting mode
-        const primary = waitingData?.primary;
         let primaryText = '';
-        if (primary && primary.predictedGroup && primary.status !== 'WAITING') {
+        let showPrimaryWaiting = true;
+        
+        // Check if PRIMARY has a prediction even in waiting mode
+        if (primary && primary.predictedGroup && primary.status === 'ACTIVE') {
+            showPrimaryWaiting = false;
             primaryText = `\n🏆 PRIMARY: ${this.getGroupIcon(primary.predictedGroup)} ${primary.predictedGroup} (${primary.confidence}%)\n💡 ${primary.message || ''}`;
         }
         
-        let message = `📊 TRIPLE PREDICTOR v15.0 - WAITING MODE
+        let message = '';
+        
+        if (showPrimaryWaiting) {
+            message = `⏳ PRIMARY PREDICTOR v15.2 - WAITING
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📐 MEDIAN: ⏳ WAITING
-📈 HIGH-VOL: ⏳ WAITING
-📉 LOW-VOL: ⏳ WAITING${primaryText}
+🏆 PRIMARY: ⏳ WAITING
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ⏰ Reason: ${waitingReasonText}
-📊 LOW=${frequencies?.LOW || 0} | MED=${frequencies?.MEDIUM || 0} | HIGH=${frequencies?.HIGH || 0}
+📊 LOW=${stats?.LOW?.count || 0} | MED=${stats?.MEDIUM?.count || 0} | HIGH=${stats?.HIGH?.count || 0}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ⏳ Next prediction after 1 more result`;
+        } else {
+            message = `📊 PRIMARY PREDICTOR v15.2 - ACTIVE (Others Waiting)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🏆 PRIMARY: ${this.getGroupIcon(primary.predictedGroup)} ${primary.predictedGroup} (${primary.confidence}%)
+💡 ${primary.message || ''}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 Others: WAITING (Median/High-Vol/Low-Vol)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 LOW=${stats?.LOW?.count || 0} | MED=${stats?.MEDIUM?.count || 0} | HIGH=${stats?.HIGH?.count || 0}`;
+        }
         
         await this.sendMessage(message);
-        console.log(`📱 Telegram: Triple waiting sent (${waitingData.waitingReason})`);
+        console.log(`📱 Telegram: PRIMARY waiting sent (${waitingReason})`);
     }
     
     /**
-     * Send TRIPLE PREDICTOR result & next notification
-     * UPDATED: Now includes PRIMARY prediction
+     * Send PRIMARY correct notification
      */
-    async sendTripleResultNotification(predictionData, actualGroup, isPrimaryCorrect, isMedianCorrect, isHighVolCorrect, isLowVolCorrect, frequencies) {
-        if (!this.isEnabled) return;
-        
-        // Rate limiting
-        const now = Date.now();
-        if (this.lastNotification.type === 'result' && now - this.lastNotification.timestamp < 3000) {
-            return;
-        }
-        
-        this.lastNotification = {
-            type: 'result',
-            timestamp: now,
-            predictedGroup: predictionData?.primary?.predictedGroup || null
-        };
-        
-        // Get prediction data
-        const primary = predictionData?.primary;
-        const median = predictionData?.median;
-        const highVolume = predictionData?.highVolume;
-        const lowVolume = predictionData?.lowVolume;
-        
-        const primaryPredicted = primary?.predictedGroup || '?';
-        const primaryConfidence = primary?.confidence || 0;
-        const medianPredicted = median?.predictedGroup || '?';
-        const medianConfidence = median?.confidence || 0;
-        const highVolPredicted = highVolume?.predictedGroup || '?';
-        const highVolConfidence = highVolume?.confidence || 0;
-        const lowVolPredicted = lowVolume?.predictedGroup || '?';
-        const lowVolConfidence = lowVolume?.confidence || 0;
-        
+    async sendPrimaryCorrectNotification(predictedGroups, actualGroup, retryCount) {
+        const primaryPredicted = predictedGroups.primary;
         const primaryIcon = this.getGroupIcon(primaryPredicted);
-        const medianIcon = this.getGroupIcon(medianPredicted);
-        const highVolIcon = this.getGroupIcon(highVolPredicted);
-        const lowVolIcon = this.getGroupIcon(lowVolPredicted);
         const actualIcon = this.getGroupIcon(actualGroup);
         
-        let primaryReasonText = '';
-        if (primary?.reason === 'UNIQUE_GROUP_FROM_DUPLICATE') {
-            primaryReasonText = '🎯 Unique from duplicate';
-        } else if (primary?.reason === 'HIGH_VOLUME_FROM_ALL_DIFFERENT') {
-            primaryReasonText = '📈 HIGH-VOLUME';
+        // Get next prediction (from current prediction data)
+        let nextPrediction = '?';
+        let nextConfidence = 0;
+        let nextIcon = '⚪';
+        
+        try {
+            const data = await this.fetchAPI('/api/current-prediction');
+            if (data && data.prediction && data.prediction.primary) {
+                nextPrediction = data.prediction.primary.predictedGroup || '?';
+                nextConfidence = data.prediction.primary.confidence || 0;
+                nextIcon = this.getGroupIcon(nextPrediction);
+            }
+        } catch (e) {
+            // Use fallback
+            nextPrediction = primaryPredicted;
+            nextConfidence = 85;
+            nextIcon = primaryIcon;
         }
         
-        // Build the message
-        let message = `📊 TRIPLE PREDICTOR v15.0 - RESULT & NEXT
+        const retryText = (retryCount && retryCount > 0) ? ` | 🔄 Retry: #${retryCount}` : '';
+        
+        const message = `✅ PRIMARY v15.2 - CORRECT!
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🏆 PRIMARY: ${primaryIcon} ${primaryPredicted} → ${actualIcon} ${actualGroup} ${this.getResultIcon(isPrimaryCorrect)} | NEXT: ${primaryIcon} ${primaryPredicted}(${primaryConfidence}%) ${primaryReasonText}
+🏆 PRIMARY: ${primaryIcon} ${primaryPredicted} → ${actualIcon} ${actualGroup} ✓
+🎯 NEXT: ${nextIcon} ${nextPrediction} (${nextConfidence}%)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📐 MEDIAN: ${medianIcon} ${medianPredicted} → ${actualIcon} ${actualGroup} ${this.getResultIcon(isMedianCorrect)} | NEXT: ${medianIcon} ${medianPredicted}(${medianConfidence}%)
-📈 HIGH-VOL: ${highVolIcon} ${highVolPredicted} → ${actualIcon} ${actualGroup} ${this.getResultIcon(isHighVolCorrect)} | NEXT: ${highVolIcon} ${highVolPredicted}(${highVolConfidence}%)
-📉 LOW-VOL: ${lowVolIcon} ${lowVolPredicted} → ${actualIcon} ${actualGroup} ${this.getResultIcon(isLowVolCorrect)} | NEXT: ${lowVolIcon} ${lowVolPredicted}(${lowVolConfidence}%)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📊 LOW=${frequencies?.LOW || 0} | MED=${frequencies?.MEDIUM || 0} | HIGH=${frequencies?.HIGH || 0}`;
+📊 Others: WAITING${retryText}`;
         
         await this.sendMessage(message);
-        console.log(`📱 Telegram: Triple result sent (PRIMARY:${primaryPredicted}→${actualGroup})`);
+        console.log(`📱 Telegram: PRIMARY correct notification sent (${primaryPredicted}→${actualGroup})`);
+    }
+    
+    /**
+     * Send PRIMARY wrong notification
+     */
+    async sendPrimaryWrongNotification(predictedGroups, actualGroup, retryCount) {
+        const primaryPredicted = predictedGroups.primary;
+        const primaryIcon = this.getGroupIcon(primaryPredicted);
+        const actualIcon = this.getGroupIcon(actualGroup);
+        
+        // Get next prediction (from current prediction data)
+        let nextPrediction = '?';
+        let nextConfidence = 0;
+        let nextIcon = '⚪';
+        
+        try {
+            const data = await this.fetchAPI('/api/current-prediction');
+            if (data && data.prediction && data.prediction.primary) {
+                nextPrediction = data.prediction.primary.predictedGroup || '?';
+                nextConfidence = data.prediction.primary.confidence || 0;
+                nextIcon = this.getGroupIcon(nextPrediction);
+            }
+        } catch (e) {
+            // Use fallback
+            nextPrediction = primaryPredicted;
+            nextConfidence = 75;
+            nextIcon = primaryIcon;
+        }
+        
+        const retryText = (retryCount && retryCount > 0) ? ` | 🔄 Retry: #${retryCount}` : '';
+        
+        const message = `❌ PRIMARY v15.2 - WRONG!
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🏆 PRIMARY: ${primaryIcon} ${primaryPredicted} → ${actualIcon} ${actualGroup} ✗
+🎯 NEXT: ${nextIcon} ${nextPrediction} (${nextConfidence}%)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 Others: WAITING${retryText}`;
+        
+        await this.sendMessage(message);
+        console.log(`📱 Telegram: PRIMARY wrong notification sent (${primaryPredicted}→${actualGroup})`);
     }
     
     // ============================================================
-    // COMMAND HANDLERS (UPDATED for v15.0)
+    // COMMAND HANDLERS (UPDATED for v15.2)
     // ============================================================
     
     /**
@@ -498,7 +436,7 @@ class TelegramBot {
         const accuracyText = aiStatus.accuracy ? `${aiStatus.accuracy.toFixed(1)}%` : 'N/A';
         const convWrong = aiStatus.consecutiveWrongCount || 0;
         
-        let message = `🤖 AI STATUS v15.0
+        let message = `🤖 PRIMARY AI STATUS v15.2
 ━━━━━━━━━━━━━━━━━━━━━
 📊 Total: ${aiStatus.totalPredictions || 0} | ✅ ${aiStatus.correctPredictions || 0}
 📈 Accuracy: ${accuracyText}
@@ -537,8 +475,7 @@ class TelegramBot {
     }
     
     /**
-     * Send history message (for /history command)
-     * UPDATED: Shows PRIMARY prediction
+     * Send history message (for /history command) - PRIMARY only
      */
     async sendHistoryMessage(predictions) {
         if (!this.isEnabled) return;
@@ -555,7 +492,8 @@ class TelegramBot {
             const p = last10[i];
             const primaryGroup = p.predictedPrimary || p.predictedGroup;
             const isPrimaryCorrect = p.isPrimaryCorrect !== undefined ? p.isPrimaryCorrect : p.isCorrect;
-            historyText += `\n${i+1}. 🏆 ${primaryGroup} → ${p.actualGroup || '?'} ${isPrimaryCorrect === true ? '✅' : (isPrimaryCorrect === false ? '❌' : '⏳')}`;
+            const statusIcon = isPrimaryCorrect === true ? '✅' : (isPrimaryCorrect === false ? '❌' : '⏳');
+            historyText += `\n${i+1}. ${this.getGroupIcon(primaryGroup)} ${primaryGroup} → ${p.actualGroup || '?'} ${statusIcon}`;
         }
         
         const correct = predictions.filter(p => {
@@ -585,7 +523,7 @@ class TelegramBot {
             return;
         }
         
-        console.log('🔄 Setting up Telegram bot polling v15.0...');
+        console.log('🔄 Setting up Telegram bot polling v15.2...');
         
         const webhookDeleted = await this.deleteWebhook();
         
@@ -731,25 +669,19 @@ class TelegramBot {
     }
     
     /**
-     * Send start message (UPDATED for v15.0)
+     * Send start message (UPDATED for v15.2)
      */
     async sendStartMessage(chatId) {
-        const message = `⚡ Lightning Dice Predictor v15.0
-🤖 TRIPLE PREDICTOR STATISTICAL AI with PRIMARY
+        const message = `⚡ Lightning Dice Predictor v15.2
+🤖 PRIMARY PREDICTOR STATISTICAL AI
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🏆 PRIMARY PREDICTION RULES:
 📌 3 groups equal → WAITING
 📌 2 groups equal → UNIQUE group
 📌 All different → HIGH-VOLUME
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📊 PREDICTORS:
-🏆 PRIMARY - Smart selection
-📐 MEDIAN - Middle value group
-📈 HIGH-VOL - Most frequent group
-📉 LOW-VOL - Least frequent group
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📱 Commands:
-/predict - Current prediction (PRIMARY + triple)
+/predict - Current PRIMARY prediction
 /stats - 10-result statistics
 /history - Last 10 PRIMARY predictions
 /status - AI system status
@@ -759,29 +691,17 @@ class TelegramBot {
     }
     
     /**
-     * Send prediction command response (UPDATED for v15.0)
+     * Send prediction command response
      */
     async sendPredictionCommand(chatId, data) {
         const prediction = data.currentPrediction;
         
         if (!prediction || prediction.status === 'WAITING' || prediction.waitingForData) {
-            const stats = prediction?.stats;
-            const frequencies = {
-                LOW: stats?.LOW?.count || 0,
-                MEDIUM: stats?.MEDIUM?.count || 0,
-                HIGH: stats?.HIGH?.count || 0
-            };
-            await this.sendTripleWaitingNotification(prediction, frequencies);
+            await this.sendPrimaryWaitingNotification(prediction);
             return;
         }
         
-        const frequencies = {
-            LOW: prediction.stats?.LOW?.count || 0,
-            MEDIUM: prediction.stats?.MEDIUM?.count || 0,
-            HIGH: prediction.stats?.HIGH?.count || 0
-        };
-        
-        await this.sendTriplePredictionNotification(prediction, frequencies);
+        await this.sendPrimaryPredictionNotification(prediction);
     }
     
     /**
@@ -799,7 +719,7 @@ class TelegramBot {
     }
     
     /**
-     * Send history command response (UPDATED for v15.0)
+     * Send history command response
      */
     async sendHistoryCommand(chatId, data) {
         const predictions = data.predictions || [];
@@ -830,7 +750,7 @@ class TelegramBot {
                     isCorrect: null,
                     retryCount: 0
                 };
-                await this.sendMessageToChat(chatId, '🔄 AI reset to WAITING mode (v15.0).');
+                await this.sendMessageToChat(chatId, '🔄 AI reset to WAITING mode (v15.2).');
             } else {
                 await this.sendMessageToChat(chatId, '⚠️ Failed to reset AI.');
             }
